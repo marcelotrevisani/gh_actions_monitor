@@ -1,0 +1,20 @@
+<idea-plugin>
+    <id>com.example.ghactions</id>
+    <name>GitHub Actions Monitor</name>
+    <vendor email="marceloduartetrevisani@gmail.com">Marcelo Trevisani</vendor>
+    <description><![CDATA[
+        Monitor and act on GitHub Actions for your project's repo without leaving the IDE.
+        <br/>Authenticate via PAT or your IDE-configured GitHub account.
+        <br/>Supports github.com and GitHub Enterprise Server.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>Git4Idea</depends>
+    <depends>org.jetbrains.plugins.github</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Tool window registration is added in Task 13. -->
+        <!-- Settings configurable is added in Task 11. -->
+        <!-- Project services are added in their respective tasks. -->
+    </extensions>
+</idea-plugin>
