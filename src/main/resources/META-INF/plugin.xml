@@ -14,5 +14,6 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <applicationService serviceImplementation="com.example.ghactions.auth.PluginSettings"/>
+        <projectService serviceImplementation="com.example.ghactions.repo.RepoBinding"/>
     </extensions>
 </idea-plugin>
