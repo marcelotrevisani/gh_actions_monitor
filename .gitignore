@@ -3,6 +3,12 @@
 build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# IntelliJ Platform Gradle Plugin 2.x cache
+.intellijPlatform/
+
+# Kotlin 2.x compiler caches
+.kotlin/
+
 # IDE
 .idea/
 *.iml
