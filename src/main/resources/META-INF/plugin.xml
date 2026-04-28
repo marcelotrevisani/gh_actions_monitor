@@ -13,8 +13,6 @@
     <depends>org.jetbrains.plugins.github</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Tool window registration is added in Task 13. -->
-        <!-- Settings configurable is added in Task 11. -->
-        <!-- Project services are added in their respective tasks. -->
+        <applicationService serviceImplementation="com.example.ghactions.auth.PluginSettings"/>
     </extensions>
 </idea-plugin>
