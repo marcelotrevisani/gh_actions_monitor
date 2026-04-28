@@ -36,6 +36,8 @@ dependencies {
 
     // Required by IntelliJ Platform tests on 2024.3+
     testImplementation("junit:junit:4.13.2")
+    // Discovers JUnit 3/4 tests (BasePlatformTestCase) under JUnit Platform.
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.11.3")
 
     // Kotlin test assertions (used by both unit and platform tests)
     testImplementation(kotlin("test"))
