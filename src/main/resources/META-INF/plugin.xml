@@ -20,5 +20,10 @@
             displayName="GitHub Actions Monitor"
             instance="com.example.ghactions.settings.GhActionsConfigurable"
             parentId="tools"/>
+        <toolWindow
+            id="GitHubActions"
+            anchor="right"
+            icon="AllIcons.Vcs.Vendors.Github"
+            factoryClass="com.example.ghactions.ui.GhActionsToolWindowFactory"/>
     </extensions>
 </idea-plugin>
