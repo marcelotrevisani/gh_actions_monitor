@@ -15,5 +15,10 @@
     <extensions defaultExtensionNs="com.intellij">
         <applicationService serviceImplementation="com.example.ghactions.auth.PluginSettings"/>
         <projectService serviceImplementation="com.example.ghactions.repo.RepoBinding"/>
+        <applicationConfigurable
+            id="com.example.ghactions.settings"
+            displayName="GitHub Actions Monitor"
+            instance="com.example.ghactions.settings.GhActionsConfigurable"
+            parentId="tools"/>
     </extensions>
 </idea-plugin>
