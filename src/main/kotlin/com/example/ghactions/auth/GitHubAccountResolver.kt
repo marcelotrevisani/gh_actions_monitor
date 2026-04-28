@@ -47,3 +47,32 @@ class GitHubAccountResolver(
     private fun normalize(url: String): String =
         url.trim().lowercase().trimEnd('/')
 }
+
+/**
+ * Adapter that reads accounts from the bundled `org.jetbrains.plugins.github` plugin.
+ *
+ * The bundled plugin's account API has changed across IDE versions; this adapter is
+ * deliberately defensive — if the call throws (API mismatch, plugin disabled), it logs
+ * and returns an empty list so the user can still fall back to PAT auth.
+ *
+ * Verified against IDE 2024.3: `GHAccountManager` is an application service registered
+ * by the bundled plugin and extends `AccountManagerBase<GithubAccount, String>`. The
+ * inherited `accountsState: StateFlow<Set<GithubAccount>>` exposes the configured accounts.
+ */
+class BundledGithubAccountSource : IdeGithubAccountSource {
+    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(BundledGithubAccountSource::class.java)
+
+    override fun listAccounts(): List<IdeAccountInfo> = try {
+        val mgr = com.intellij.openapi.components.service<
+            org.jetbrains.plugins.github.authentication.accounts.GHAccountManager>()
+        mgr.accountsState.value.map { acct ->
+            IdeAccountInfo(
+                id = acct.id,
+                host = acct.server.toApiUrl().removeSuffix("/")
+            )
+        }
+    } catch (e: Throwable) {
+        log.warn("Failed to read IDE GitHub accounts; falling back to empty list", e)
+        emptyList()
+    }
+}
