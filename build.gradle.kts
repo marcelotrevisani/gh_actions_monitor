@@ -30,13 +30,16 @@ dependencies {
         testFramework(TestFrameworkType.Platform)
     }
 
-    // HTTP and JSON
-    implementation("io.ktor:ktor-client-core:2.3.13")
-    implementation("io.ktor:ktor-client-cio:2.3.13")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.13")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.13")
+    // HTTP and JSON. Each Ktor dep excludes its transitive kotlinx-coroutines-core because the
+    // IntelliJ Platform already bundles coroutines on the runtime classpath; pulling our own
+    // copy alongside causes a loader-constraint violation when StateFlow / Flow are loaded
+    // twice (once by PluginClassLoader, once by PathClassLoader).
+    implementation("io.ktor:ktor-client-core:2.3.13") { excludeCoroutines() }
+    implementation("io.ktor:ktor-client-cio:2.3.13") { excludeCoroutines() }
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.13") { excludeCoroutines() }
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.13") { excludeCoroutines() }
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 
     // JUnit 5 for pure unit tests
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
@@ -59,6 +62,14 @@ dependencies {
 
 kotlin {
     jvmToolchain(providers.gradleProperty("javaVersion").get().toInt())
+}
+
+/** Helper for the dependency exclusions in the `dependencies { ... }` block above. */
+fun org.gradle.api.artifacts.ModuleDependency.excludeCoroutines() {
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-slf4j")
 }
 
 intellijPlatform {
