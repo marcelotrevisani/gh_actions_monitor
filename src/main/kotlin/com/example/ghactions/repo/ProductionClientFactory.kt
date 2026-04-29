@@ -17,12 +17,13 @@ import com.intellij.openapi.project.Project
  * the credential-resolution logic is testable on its own (and so the repositories don't
  * have to know which auth sources exist).
  *
- * Plan 5 makes this `suspend` so the IDE-account credential lookup can flow through.
+ * Plan 5: `suspend` so IDE-account credential lookup (via the bundled GitHub plugin's
+ * `GHAccountManager.findCredentials`) can flow through.
  */
 internal object ProductionClientFactory {
     private val log = Logger.getInstance(ProductionClientFactory::class.java)
 
-    fun create(project: Project): GitHubClient? {
+    suspend fun create(project: Project): GitHubClient? {
         val binding = project.getService(com.example.ghactions.repo.RepoBinding::class.java).current ?: return null
         val settings = PluginSettings.getInstance().state
 
@@ -33,18 +34,14 @@ internal object ProductionClientFactory {
             },
             preferredAccountId = settings.preferredAccountId
         )
-        val auth = resolver.resolve(binding.host) ?: return null
-
-        // Plan 2-era stub: only PAT auth produces a usable client; IDE-account auth
-        // is wired in Plan 5 (next task).
-        val token = when (auth) {
-            is AuthSource.Pat -> auth.token
-            is AuthSource.IdeAccount -> {
-                log.warn("IDE-account credentials not yet wired; user must use a PAT for now.")
-                return null
-            }
+        val resolved = resolver.resolveAuth(binding.host) ?: run {
+            log.info("No credentials available for ${binding.host}")
+            return null
         }
-        val patAsAuth = AuthSource.Pat(host = binding.host, token = token)
+        // Always pass the actual token to GitHubHttp via a Pat-shaped AuthSource — the
+        // `Authorization` header is "token <X>" regardless of whether <X> came from a PAT
+        // input or an IDE-account credential lookup.
+        val patAsAuth = AuthSource.Pat(host = binding.host, token = resolved.token)
         val http = GitHubHttp.create(binding.host, patAsAuth)
         return GitHubClient(http)
     }

@@ -40,7 +40,7 @@ data class PullRequestWithRun(val pr: PullRequest, val latestRun: Run?)
 @Service(Service.Level.PROJECT)
 class PullRequestRepository(
     private val boundRepo: () -> BoundRepo?,
-    private val clientFactory: () -> GitHubClient?,
+    private val clientFactory: suspend () -> GitHubClient?,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : Disposable {
 
