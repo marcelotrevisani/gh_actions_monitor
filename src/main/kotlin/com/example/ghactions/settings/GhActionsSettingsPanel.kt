@@ -77,6 +77,14 @@ class GhActionsSettingsPanel {
                 button("Test connection") { testConnection() }
                 cell(statusLabel)
             }
+            row {
+                button("Add / manage GitHub accounts…") { manageAccounts() }
+                    .comment(
+                        "Opens IntelliJ Settings → Version Control → GitHub. The bundled GitHub " +
+                            "plugin handles the github.com OAuth flow there. Reopen this dialog after " +
+                            "adding an account to refresh the dropdown above."
+                    )
+            }
         }
         group("Behavior") {
             row {
@@ -186,6 +194,15 @@ class GhActionsSettingsPanel {
                 }
             }, modality)
         }.apply { name = "GhActions-TestConnection"; isDaemon = true }.start()
+    }
+
+    private fun manageAccounts() {
+        // ShowSettingsUtil.showSettingsDialog(Project, String) accepts the configurable's
+        // display name. "GitHub" matches the bundled plugin's display name in IDEA 2024.3.
+        val project = com.intellij.openapi.project.ProjectManager.getInstance().openProjects.firstOrNull()
+            ?: com.intellij.openapi.project.ProjectManager.getInstance().defaultProject
+        com.intellij.openapi.options.ShowSettingsUtil.getInstance()
+            .showSettingsDialog(project, "GitHub")
     }
 
     companion object {
