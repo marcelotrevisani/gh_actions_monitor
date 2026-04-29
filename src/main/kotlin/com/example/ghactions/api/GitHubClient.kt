@@ -50,6 +50,23 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
             response.body<com.example.ghactions.api.dto.ListJobsResponse>().jobs.map { it.toDomain() }
         }
 
+    /**
+     * `GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs`. Returns the full plain-text
+     * log. GitHub typically responds with `302 Found` redirecting to a signed download URL;
+     * Ktor follows redirects by default, so the body we return is the final 200 body.
+     */
+    suspend fun getJobLogs(repo: BoundRepo, jobId: com.example.ghactions.domain.JobId): String =
+        withContext(Dispatchers.IO) {
+            val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/jobs/${jobId.value}/logs")
+            if (!response.status.isSuccess()) {
+                throw GitHubApiException(
+                    status = response.status.value,
+                    message = "GET logs failed: ${response.bodyAsText().take(200)}"
+                )
+            }
+            response.bodyAsText()
+        }
+
     override fun close() {
         http.close()
     }

@@ -1,0 +1,6 @@
+2026-04-29T19:33:10.0000000Z ##[group]Run actions/checkout@v4
+2026-04-29T19:33:10.1234567Z with:
+2026-04-29T19:33:10.2345678Z   ref: main
+2026-04-29T19:33:10.3456789Z ##[endgroup]
+2026-04-29T19:33:11.0000000Z Cloning repository https://github.com/octo/Hello-World
+2026-04-29T19:33:14.5000000Z Done.
