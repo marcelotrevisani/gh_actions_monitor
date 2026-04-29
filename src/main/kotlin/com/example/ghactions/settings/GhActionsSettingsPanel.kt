@@ -6,6 +6,8 @@ import com.example.ghactions.auth.PatStorage
 import com.example.ghactions.auth.PluginSettings
 import com.example.ghactions.auth.TestConnection
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.SegmentedButton
@@ -156,21 +158,37 @@ class GhActionsSettingsPanel {
     }
 
     private fun testConnection() {
+        // Flush typed values from the form into [state] so we probe the URL the user actually sees.
+        // DialogPanel.apply() pushes UI bindings into bound state without persisting elsewhere.
+        component.apply()
+
         val typed = String(tokenField.password)
         val token = typed.ifEmpty { patStorage.getToken(state.baseUrl) ?: "" }
         if (token.isEmpty()) {
             statusLabel.text = "Enter a token first."
             return
         }
+        val baseUrl = state.baseUrl
         statusLabel.text = "Testing…"
+        // Capture modality so the result lands on the EDT *while the settings dialog is open*.
+        val modality = ModalityState.stateForComponent(component)
         Thread {
-            val result = TestConnection.probe(state.baseUrl, token)
-            ApplicationManager.getApplication().invokeLater {
+            val result = try {
+                TestConnection.probe(baseUrl, token)
+            } catch (t: Throwable) {
+                LOG.warn("Test connection threw unexpectedly", t)
+                TestConnection.Result.Failure(null, t.message ?: t::class.java.simpleName)
+            }
+            ApplicationManager.getApplication().invokeLater({
                 statusLabel.text = when (result) {
                     is TestConnection.Result.Success -> "Connected as @${result.login}"
                     is TestConnection.Result.Failure -> "Failed: ${result.message}"
                 }
-            }
-        }.start()
+            }, modality)
+        }.apply { name = "GhActions-TestConnection"; isDaemon = true }.start()
+    }
+
+    companion object {
+        private val LOG = Logger.getInstance(GhActionsSettingsPanel::class.java)
     }
 }
