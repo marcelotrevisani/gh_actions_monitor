@@ -12,7 +12,6 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.ui.OnePixelSplitter
-import com.intellij.openapi.util.Disposer
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
@@ -60,7 +59,7 @@ class RunDetailPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         isRootVisible = false
     }
 
-    private val logViewer = LogViewerPanel(project).also { Disposer.register(this, it) }
+    private val logViewer = LogViewerPanel()
 
     private val emptyMessage = JBLabel("Select a run to see its jobs.").apply {
         horizontalAlignment = SwingConstants.CENTER

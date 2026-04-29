@@ -11,9 +11,11 @@ import com.example.ghactions.events.Topics
 import com.example.ghactions.repo.RepoBinding
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.OnePixelSplitter
+import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
 import javax.swing.JComponent
 
@@ -43,23 +45,36 @@ private class ToolWindowController(
         val binding = project.getService(RepoBinding::class.java).current
         val hasCreds = binding != null && hasCredentialsFor(binding.host)
 
+        // `removeAllContents(true)` disposes each Content and any Disposables registered as
+        // children of that Content's disposer. Our panels (RunListPanel, RunDetailPanel) are
+        // hooked up via `Disposer.register(content, panel)` below — that's the chain that
+        // cancels their coroutine scopes and releases editors. Without this wiring, every
+        // refresh leaks a copy of those panels and the IDE shutdown logs flag the leak.
         toolWindow.contentManager.removeAllContents(true)
 
-        val panel: JComponent = when {
-            binding == null || !hasCreds -> EmptyStatePanel(project)
+        val pair: Pair<JComponent, List<com.intellij.openapi.Disposable>> = when {
+            binding == null || !hasCreds -> EmptyStatePanel(project) to emptyList()
             else -> buildRunView()
         }
-        val content = ContentFactory.getInstance().createContent(panel, "", false)
+        val panel = pair.first
+        val disposables = pair.second
+        val content: Content = ContentFactory.getInstance().createContent(panel, "", false)
+        disposables.forEach { Disposer.register(content, it) }
         toolWindow.contentManager.addContent(content)
     }
 
-    private fun buildRunView(): JComponent {
+    /**
+     * Returns the run-view root component plus the Disposable instances that need to be released
+     * when the tool window content is removed. The list is consumed in [refresh].
+     */
+    private fun buildRunView(): Pair<JComponent, List<com.intellij.openapi.Disposable>> {
         val detail = RunDetailPanel(project)
         val list = RunListPanel(project) { run -> detail.showRun(run) }
-        return OnePixelSplitter(true, 0.35f).apply {
+        val splitter = OnePixelSplitter(true, 0.35f).apply {
             firstComponent = list
             secondComponent = detail
         }
+        return splitter to listOf(list, detail)
     }
 
     private fun hasCredentialsFor(host: String): Boolean {

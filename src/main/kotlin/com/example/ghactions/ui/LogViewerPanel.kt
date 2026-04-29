@@ -1,55 +1,46 @@
 package com.example.ghactions.ui
 
-import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.editor.EditorFactory
-import com.intellij.openapi.editor.ScrollType
-import com.intellij.openapi.editor.ex.EditorEx
-import com.intellij.openapi.project.Project
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.Font
 import javax.swing.JPanel
+import javax.swing.JTextArea
 
 /**
- * Read-only viewer for GitHub Actions job logs. Plan 2 displays raw text;
- * Plan 3 will add ANSI color parsing and step-section folding.
+ * Read-only viewer for GitHub Actions job logs. Plan 2 displays raw text in a plain
+ * monospace [JTextArea] inside a scroll pane — no platform editor, no write-action
+ * gymnastics, no disposer chain to leak. ANSI color rendering and `::group::` folding
+ * land in Plan 3 alongside live streaming, where the editor's structured features
+ * actually pay off.
  */
-class LogViewerPanel(project: Project) : JPanel(BorderLayout()), Disposable {
+class LogViewerPanel : JPanel(BorderLayout()) {
 
-    private val editorFactory = EditorFactory.getInstance()
-    private val document = editorFactory.createDocument("")
-    private val editor: EditorEx = editorFactory.createViewer(document, project) as EditorEx
+    private val textArea = JTextArea().apply {
+        isEditable = false
+        lineWrap = false
+        font = Font(Font.MONOSPACED, Font.PLAIN, 12)
+        margin = JBUI.insets(4, 8)
+    }
+
+    private val scrollPane = JBScrollPane(textArea).apply {
+        border = JBUI.Borders.empty()
+    }
 
     init {
-        editor.settings.apply {
-            isLineMarkerAreaShown = false
-            isFoldingOutlineShown = false
-            isLineNumbersShown = false
-            isCaretRowShown = false
-            additionalLinesCount = 0
-            additionalColumnsCount = 0
-        }
-        editor.headerComponent = null
-
         border = JBUI.Borders.empty()
-        add(editor.component, BorderLayout.CENTER)
+        add(scrollPane, BorderLayout.CENTER)
     }
 
     /** Replace the displayed text. Safe to call from any thread; marshals to EDT. */
     fun setText(text: String) {
         ApplicationManager.getApplication().invokeLater {
-            ApplicationManager.getApplication().runWriteAction {
-                document.setText(text)
-            }
+            textArea.text = text
             // Auto-scroll to end so users see the latest output.
-            editor.caretModel.moveToOffset(document.textLength)
-            editor.scrollingModel.scrollToCaret(ScrollType.MAKE_VISIBLE)
+            textArea.caretPosition = textArea.document.length
         }
     }
 
     fun clear() = setText("")
-
-    override fun dispose() {
-        editorFactory.releaseEditor(editor)
-    }
 }

@@ -58,7 +58,10 @@ sealed class LogState {
 class RunRepository(
     private val boundRepo: () -> BoundRepo?,
     private val clientFactory: () -> GitHubClient?,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+    // Production uses Dispatchers.IO so HTTP setup (Ktor CIO engine boot, etc.) does NOT run on
+    // the EDT. Tests inject a scope built on `StandardTestDispatcher` and drive it via
+    // `advanceUntilIdle`, which is why the third constructor parameter exists.
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : Disposable {
 
     private val log = Logger.getInstance(RunRepository::class.java)

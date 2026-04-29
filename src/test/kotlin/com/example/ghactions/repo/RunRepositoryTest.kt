@@ -11,7 +11,10 @@ import com.example.ghactions.events.BoundRepo
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -24,6 +27,11 @@ import kotlin.test.assertIs
 class RunRepositoryTest {
 
     private val repo = BoundRepo(host = "https://api.github.com", owner = "octo", repo = "Hello-World")
+
+    /** A scope using `Dispatchers.Unconfined` so launches run eagerly on the calling thread —
+     *  paired with mockk's synchronous suspend-fun stubbing this gives deterministic state
+     *  transitions without needing `advanceUntilIdle`-aware dispatcher injection. */
+    private fun unconfinedScope() = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
     private fun aRun(id: Long, status: RunStatus = RunStatus.COMPLETED): Run = Run(
         id = RunId(id),
@@ -44,7 +52,7 @@ class RunRepositoryTest {
     @Test
     fun `initial runs state is Idle`() {
         val client = mockk<GitHubClient>(relaxed = true)
-        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client })
+        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
         assertIs<RunListState.Idle>(repository.runsState.value)
     }
 
@@ -52,7 +60,7 @@ class RunRepositoryTest {
     fun `refreshRuns transitions to Loaded on success`() = runTest(StandardTestDispatcher()) {
         val client = mockk<GitHubClient>(relaxed = true)
         coEvery { client.listRunsForRepo(repo, any()) } returns listOf(aRun(1), aRun(2))
-        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client })
+        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
 
         repository.refreshRuns()
         advanceUntilIdle()
@@ -66,7 +74,7 @@ class RunRepositoryTest {
     fun `refreshRuns surfaces api errors as Error state`() = runTest(StandardTestDispatcher()) {
         val client = mockk<GitHubClient>(relaxed = true)
         coEvery { client.listRunsForRepo(repo, any()) } throws GitHubApiException(401, "Unauthorized")
-        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client })
+        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
 
         repository.refreshRuns()
         advanceUntilIdle()
@@ -80,7 +88,7 @@ class RunRepositoryTest {
     fun `refreshJobs populates jobsState for given runId`() = runTest(StandardTestDispatcher()) {
         val client = mockk<GitHubClient>(relaxed = true)
         coEvery { client.listJobs(repo, RunId(7L)) } returns emptyList()
-        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client })
+        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
 
         repository.refreshJobs(RunId(7L))
         advanceUntilIdle()
@@ -93,7 +101,7 @@ class RunRepositoryTest {
     fun `refreshLogs populates logsState for given jobId`() = runTest(StandardTestDispatcher()) {
         val client = mockk<GitHubClient>(relaxed = true)
         coEvery { client.getJobLogs(repo, JobId(99L)) } returns "log text"
-        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client })
+        val repository = RunRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
 
         repository.refreshLogs(JobId(99L))
         advanceUntilIdle()
@@ -106,7 +114,7 @@ class RunRepositoryTest {
     @Test
     fun `refreshRuns is a no-op when boundRepo is null`() = runTest(StandardTestDispatcher()) {
         val client = mockk<GitHubClient>(relaxed = true)
-        val repository = RunRepository(boundRepo = { null }, clientFactory = { client })
+        val repository = RunRepository(boundRepo = { null }, clientFactory = { client }, scope = unconfinedScope())
 
         repository.refreshRuns()
         advanceUntilIdle()
