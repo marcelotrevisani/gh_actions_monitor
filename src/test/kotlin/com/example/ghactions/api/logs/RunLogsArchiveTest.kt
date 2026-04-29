@@ -135,6 +135,62 @@ class RunLogsArchiveTest {
     }
 
     @Test
+    fun `stepLog falls back to slicing the whole-job log by Run group markers`() {
+        // No per-step files — only the root job log. This is the layout the user's
+        // 'build-and-test' archive was emitting.
+        val wholeLog = """
+            ##[group]Runner Image Provisioner
+            metadata
+            ##[endgroup]
+            ##[group]Run actions/checkout@v4
+            with: stuff
+            ##[endgroup]
+            Syncing repository
+            ##[group]Run swift build
+            swift build
+            ##[endgroup]
+            Build complete
+            ##[group]Run swift test
+            swift test
+            ##[endgroup]
+            Test Suite passed
+        """.trimIndent()
+        val zip = buildZip(mapOf(
+            "0_build-and-test.txt" to wholeLog,
+            "build-and-test/system.txt" to "metadata"
+        ))
+        val archive = RunLogsArchive(zip)
+
+        // The synthetic log has 3 user steps (checkout, build, swift test); the API
+        // numbers them with "Set up job" as step 1, so the swift-test step is API
+        // step 4. Positional fallback: stepNumber - 2 = 2, the 3rd start (index 2),
+        // which is "Run swift test".
+        val result = archive.stepLog("build-and-test", stepNumber = 4, stepName = "Run tests")
+        assertTrue(result != null && result.contains("swift test"), "Expected swift test section, got: $result")
+        assertTrue(result.contains("Test Suite passed"), "Expected post-endgroup output to be included, got: $result")
+    }
+
+    @Test
+    fun `stepLog falls back to slicing matches by exact name when log group equals step name`() {
+        val wholeLog = """
+            ##[group]Run actions/checkout@v4
+            with: stuff
+            ##[endgroup]
+            Syncing repository
+            ##[group]Run user_step
+            user output
+            ##[endgroup]
+            more output
+        """.trimIndent()
+        val zip = buildZip(mapOf("0_job.txt" to wholeLog))
+        val archive = RunLogsArchive(zip)
+
+        // Exact match (with the "Run " prefix included in API step.name).
+        val result = archive.stepLog("job", stepNumber = 99, stepName = "Run user_step")
+        assertTrue(result != null && result.contains("user output"), "Expected user_step section, got: $result")
+    }
+
+    @Test
     fun `bytes are not retained beyond construction-time parse`() {
         // Defensive: confirm that mutating the input array doesn't change the parse output.
         val original = buildZip(mapOf("build.txt" to "hello"))

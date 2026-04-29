@@ -88,10 +88,15 @@ class RunLogsArchive(zipBytes: ByteArray) {
     }
 
     /**
-     * Per-step log text. Strategy:
+     * Per-step log text. Strategy in priority order:
      *   1. Exact path: `<jobName>/<stepNumber>_<sanitisedStepName>.txt`.
      *   2. Step-number under exact `<jobName>/`.
      *   3. Step-number under any folder whose name fuzzy-matches `jobName`.
+     *   4. **Fallback** when none of the above hit: parse the whole-job log (which
+     *      *does* exist even when per-step files don't) and slice out the section
+     *      bounded by `##[group]Run …` markers. This is necessary because GitHub
+     *      sometimes emits archives with no per-step files at all — only a root
+     *      `<jobName>.txt` containing every step's interleaved output.
      */
     fun stepLog(jobName: String, stepNumber: Int, stepName: String): String? {
         val sanitised = sanitiseForFileName(stepName)
@@ -121,7 +126,57 @@ class RunLogsArchive(zipBytes: ByteArray) {
                 ?.value
                 ?.let { return it }
         }
-        return null
+
+        // 4. Fallback: slice the whole-job log by `##[group]Run …` markers.
+        return jobLog(jobName)?.let { wholeLog -> sliceFromJobLog(wholeLog, stepNumber, stepName) }
+    }
+
+    /**
+     * Find the section of [wholeLog] that corresponds to API step [stepNumber] / [stepName].
+     *
+     * Sections start at depth-0 lines beginning with `##[group]Run ` (the GitHub convention
+     * for every user step, whether `run:` shell or `uses:` action). Sibling depth-0 groups
+     * inside an action body (e.g. `##[group]Getting Git version info`) stay nested.
+     *
+     * Match priority: exact name → substring either direction → positional fallback
+     * (`stepNumber − 2` because the synthetic "Set up job" is step 1 in the API but has
+     * no `##[group]Run …` line in the log).
+     */
+    private fun sliceFromJobLog(wholeLog: String, stepNumber: Int, stepName: String): String? {
+        val lines = wholeLog.lines()
+        val starts = mutableListOf<Pair<Int, String>>()  // (line index, captured group name)
+        var depth = 0
+        for ((i, line) in lines.withIndex()) {
+            val gm = GROUP_RE.find(line)
+            if (gm != null) {
+                val captured = gm.groupValues[1].trim()
+                if (depth == 0 && captured.startsWith(STEP_GROUP_PREFIX)) {
+                    starts.add(i to captured)
+                }
+                depth++
+                continue
+            }
+            if (ENDGROUP_RE.find(line) != null && depth > 0) depth--
+        }
+        if (starts.isEmpty()) return null
+
+        val needle = stepName.trim()
+        val pickedIndex: Int = run {
+            // Exact name match.
+            starts.indexOfFirst { it.second.equals(needle, ignoreCase = true) }
+                .takeIf { it >= 0 }
+                // Substring either direction.
+                ?: starts.indexOfFirst { (_, n) ->
+                    n.contains(needle, ignoreCase = true) || needle.contains(n, ignoreCase = true)
+                }.takeIf { it >= 0 }
+                // Positional fallback.
+                ?: (stepNumber - 2).takeIf { it in starts.indices }
+                ?: return null
+        }
+
+        val (startLine, _) = starts[pickedIndex]
+        val endLine = starts.getOrNull(pickedIndex + 1)?.first ?: lines.size
+        return lines.subList(startLine, endLine).joinToString("\n")
     }
 
     /**
@@ -168,4 +223,10 @@ class RunLogsArchive(zipBytes: ByteArray) {
      */
     private fun sanitiseForFileName(name: String): String =
         name.replace('/', '_').replace(' ', '_').trim()
+
+    private companion object {
+        private val GROUP_RE = Regex("##\\[group](.*)")
+        private val ENDGROUP_RE = Regex("##\\[endgroup]")
+        private const val STEP_GROUP_PREFIX = "Run "
+    }
 }
