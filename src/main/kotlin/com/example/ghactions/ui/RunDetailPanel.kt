@@ -1,7 +1,6 @@
 package com.example.ghactions.ui
 
 import com.example.ghactions.domain.Job
-import com.example.ghactions.domain.JobId
 import com.example.ghactions.domain.Run
 import com.example.ghactions.domain.RunConclusion
 import com.example.ghactions.domain.RunStatus
@@ -53,24 +52,18 @@ class RunDetailPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         addTreeSelectionListener { e ->
             val node = e.path.lastPathComponent as? DefaultMutableTreeNode ?: return@addTreeSelectionListener
             when (val payload = node.userObject) {
-                is Job -> {
-                    pendingStepFocus = null
-                    showJobLogs(payload)
-                }
+                is Job -> showJobLogs(payload)
                 is Step -> {
                     val parentJob = (node.parent as? DefaultMutableTreeNode)?.userObject as? Job
                         ?: return@addTreeSelectionListener
-                    pendingStepFocus = StepFocus(parentJob.id, payload.number, payload.name)
-                    showJobLogs(parentJob)
+                    val run = rootNode.userObject as? Run ?: return@addTreeSelectionListener
+                    showStepLogs(run, parentJob, payload)
                 }
                 else -> Unit
             }
         }
         isRootVisible = false
     }
-
-    private data class StepFocus(val jobId: JobId, val stepNumber: Int, val stepName: String)
-    private var pendingStepFocus: StepFocus? = null
 
     private val logViewer = LogViewerPanel()
 
@@ -135,21 +128,35 @@ class RunDetailPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         currentLogFlowJob?.cancel()
         currentLogFlowJob = scope.launch {
             repository.logsState(job.id).collect { state ->
-                when (state) {
-                    is LogState.Idle -> logViewer.clear()
-                    is LogState.Loading -> logViewer.setText("(loading logs…)")
-                    is LogState.Loaded -> {
-                        logViewer.setText(state.text)
-                        // If the user clicked a step, drill the viewer into that section
-                        // once the underlying log is loaded. Skip when the focus is for
-                        // a different job (the user navigated away mid-load).
-                        val focus = pendingStepFocus
-                        if (focus != null && focus.jobId == job.id) {
-                            logViewer.showStep(focus.stepNumber, focus.stepName)
-                        }
-                    }
-                    is LogState.Error -> logViewer.setText("Failed${state.httpStatus?.let { " ($it)" } ?: ""}: ${state.message}")
-                }
+                renderLogState(state, statusHint = "")
+            }
+        }
+    }
+
+    private fun showStepLogs(run: Run, job: Job, step: Step) {
+        repository.refreshStepLog(
+            runId = run.id,
+            jobId = job.id,
+            jobName = job.name,
+            stepNumber = step.number,
+            stepName = step.name
+        )
+        currentLogFlowJob?.cancel()
+        currentLogFlowJob = scope.launch {
+            repository.logsState(job.id, stepNumber = step.number).collect { state ->
+                renderLogState(state, statusHint = "Step ${step.number} · ${step.name}")
+            }
+        }
+    }
+
+    private fun renderLogState(state: LogState, statusHint: String) {
+        when (state) {
+            is LogState.Idle -> logViewer.clear()
+            is LogState.Loading -> { logViewer.setText("(loading logs…)"); logViewer.setStatus(statusHint) }
+            is LogState.Loaded -> { logViewer.setText(state.text); logViewer.setStatus(statusHint) }
+            is LogState.Error -> {
+                logViewer.setText("Failed${state.httpStatus?.let { " ($it)" } ?: ""}: ${state.message}")
+                logViewer.setStatus("")
             }
         }
     }
