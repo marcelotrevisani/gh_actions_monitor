@@ -89,6 +89,31 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
             response.body<ByteArray>()
         }
 
+    /**
+     * `GET /repos/{owner}/{repo}/pulls?state=…&per_page=…`. Paginated; Plan 4 fetches the
+     * first page only.
+     *
+     * `state` accepts the API wire values via [com.example.ghactions.domain.PullRequestState];
+     * [PullRequestState.ALL] passes through as `state=all` to GitHub.
+     */
+    suspend fun listPullRequests(
+        repo: BoundRepo,
+        state: com.example.ghactions.domain.PullRequestState,
+        perPage: Int = 30
+    ): List<com.example.ghactions.domain.PullRequest> = withContext(Dispatchers.IO) {
+        val response = http.get("/repos/${repo.owner}/${repo.repo}/pulls") {
+            parameter("state", state.wireValue.ifEmpty { "all" })
+            parameter("per_page", perPage)
+        }
+        if (!response.status.isSuccess()) {
+            throw GitHubApiException(
+                status = response.status.value,
+                message = "GET pulls failed: ${response.bodyAsText().take(200)}"
+            )
+        }
+        response.body<List<com.example.ghactions.api.dto.PullRequestDto>>().map { it.toDomain() }
+    }
+
     override fun close() {
         http.close()
     }
