@@ -21,6 +21,9 @@ interface PatLookup {
     fun getToken(host: String): String?
 }
 
+/** A successfully-resolved authentication: the source identity and its real token. */
+data class ResolvedAuth(val auth: AuthSource, val token: String)
+
 /**
  * Resolves credentials for a target [host] in priority order:
  * 1. IDE-configured GitHub account whose host matches.
@@ -50,6 +53,40 @@ class GitHubAccountResolver(
             return AuthSource.Pat(host = host, token = it)
         }
 
+        return null
+    }
+
+    /**
+     * Async sibling of [resolve] that also returns the actual token to use. For PAT auth
+     * the token is the one already stored in `PasswordSafe`; for IDE-account auth it's
+     * fetched via [IdeGithubAccountSource.findToken] (a suspend call into the bundled
+     * GitHub plugin's `GHAccountManager`).
+     *
+     * If the IDE-account lookup fails (no token stored for the matched account), we fall
+     * through to the PAT path rather than returning a half-resolved result.
+     */
+    suspend fun resolveAuth(host: String): ResolvedAuth? {
+        val normalizedTarget = normalize(host)
+
+        val matchingIdeAccounts = ideSource.listAccounts()
+            .filter { normalize(it.host) == normalizedTarget }
+
+        if (matchingIdeAccounts.isNotEmpty()) {
+            val chosen = matchingIdeAccounts.firstOrNull { it.id == preferredAccountId }
+                ?: matchingIdeAccounts.first()
+            val ideToken = ideSource.findToken(chosen.id)
+            if (ideToken != null) {
+                return ResolvedAuth(
+                    auth = AuthSource.IdeAccount(host = host, accountId = chosen.id),
+                    token = ideToken
+                )
+            }
+            // Fall through to PAT — IDE account exists but credential lookup failed.
+        }
+
+        patLookup.getToken(host)?.let {
+            return ResolvedAuth(auth = AuthSource.Pat(host = host, token = it), token = it)
+        }
         return null
     }
 

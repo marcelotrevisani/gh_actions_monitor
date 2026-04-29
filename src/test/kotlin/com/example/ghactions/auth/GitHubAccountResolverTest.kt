@@ -79,4 +79,71 @@ class GitHubAccountResolverTest {
         val result = r.resolve("https://api.github.com")
         assertTrue(result is AuthSource.IdeAccount)
     }
+
+    private fun fakePatSource(tokens: Map<String, String>) = object : PatLookup {
+        override fun getToken(host: String) = tokens[host]
+    }
+
+    private fun fakeIdeSourceWithToken(
+        accounts: List<Pair<String, String>>,
+        tokenFor: Map<String, String> = emptyMap()
+    ) = object : IdeGithubAccountSource {
+        override fun listAccounts() = accounts.map { (id, host) -> IdeAccountInfo(id, host) }
+        override suspend fun findToken(accountId: String): String? = tokenFor[accountId]
+    }
+
+    @Test
+    fun `resolveAuth returns null when nothing matches`() = kotlinx.coroutines.test.runTest {
+        val r = GitHubAccountResolver(
+            ideSource = fakeIdeSource(),
+            patLookup = fakePatSource(emptyMap()),
+            preferredAccountId = null
+        )
+        assertNull(r.resolveAuth("https://api.github.com"))
+    }
+
+    @Test
+    fun `resolveAuth returns Pat with the stored token for a PAT host`() = kotlinx.coroutines.test.runTest {
+        val r = GitHubAccountResolver(
+            ideSource = fakeIdeSource(),
+            patLookup = fakePatSource(mapOf("https://api.github.com" to "ghp_xxx")),
+            preferredAccountId = null
+        )
+        val resolved = r.resolveAuth("https://api.github.com")!!
+        assertTrue(resolved.auth is AuthSource.Pat)
+        assertEquals("ghp_xxx", resolved.token)
+    }
+
+    @Test
+    fun `resolveAuth returns IdeAccount with the IDE-fetched token for an IDE account`() =
+        kotlinx.coroutines.test.runTest {
+            val r = GitHubAccountResolver(
+                ideSource = fakeIdeSourceWithToken(
+                    accounts = listOf("acct-1" to "https://api.github.com"),
+                    tokenFor = mapOf("acct-1" to "ide-token-xyz")
+                ),
+                patLookup = fakePatSource(mapOf("https://api.github.com" to "fallback-pat")),
+                preferredAccountId = null
+            )
+            val resolved = r.resolveAuth("https://api.github.com")!!
+            assertTrue(resolved.auth is AuthSource.IdeAccount)
+            assertEquals("acct-1", (resolved.auth as AuthSource.IdeAccount).accountId)
+            assertEquals("ide-token-xyz", resolved.token)
+        }
+
+    @Test
+    fun `resolveAuth falls through to PAT when the matched IDE account has no stored token`() =
+        kotlinx.coroutines.test.runTest {
+            val r = GitHubAccountResolver(
+                ideSource = fakeIdeSourceWithToken(
+                    accounts = listOf("acct-1" to "https://api.github.com"),
+                    tokenFor = emptyMap()
+                ),
+                patLookup = fakePatSource(mapOf("https://api.github.com" to "fallback-pat")),
+                preferredAccountId = null
+            )
+            val resolved = r.resolveAuth("https://api.github.com")!!
+            assertTrue(resolved.auth is AuthSource.Pat, "Should have fallen through to PAT; got ${resolved.auth}")
+            assertEquals("fallback-pat", resolved.token)
+        }
 }
