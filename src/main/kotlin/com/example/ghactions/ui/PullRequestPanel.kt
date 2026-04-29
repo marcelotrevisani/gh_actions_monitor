@@ -51,6 +51,7 @@ class PullRequestPanel(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val repository = project.getService(PullRequestRepository::class.java)
+    private val repoBinding = project.getService(com.example.ghactions.repo.RepoBinding::class.java)
 
     private val rootNode = DefaultMutableTreeNode("(root)")
     private val treeModel = DefaultTreeModel(rootNode)
@@ -175,6 +176,29 @@ class PullRequestPanel(
         treeModel.reload()
         expandAll()
         cardLayout.show(cardsPanel, CARD_TREE)
+        autoSelectCurrentBranch(entries)
+    }
+
+    /**
+     * If a PR's `head_ref` matches the project's current local git branch, select that PR's
+     * run row. The selection event fires [onRunSelected], which in turn refreshes the run
+     * detail panel below.
+     *
+     * Called on every render — handles both initial load and filter-driven re-renders. If
+     * there's no current branch (detached HEAD), nothing matches the current branch (typical
+     * on `main`), or no run is associated with the matching PR, we leave the selection as-is.
+     */
+    private fun autoSelectCurrentBranch(entries: List<PullRequestWithRun>) {
+        val branch = repoBinding.currentBranch ?: return
+        val matchIdx = entries.indexOfFirst { it.pr.headRef == branch }
+        if (matchIdx < 0) return
+        val matched = entries[matchIdx]
+        if (matched.latestRun == null) return
+        // Path: root → matched PR node → its run child (added at index 0 in renderEntries).
+        val prNode = rootNode.getChildAt(matchIdx) as DefaultMutableTreeNode
+        val runNode = prNode.getChildAt(0) as DefaultMutableTreeNode
+        tree.selectionPath = javax.swing.tree.TreePath(runNode.path)
+        tree.scrollPathToVisible(tree.selectionPath)
     }
 
     init {
