@@ -2,6 +2,7 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     kotlin("jvm") version "2.0.21"
+    kotlin("plugin.serialization") version "2.0.21"
     id("org.jetbrains.intellij.platform") version "2.2.1"
 }
 
@@ -29,6 +30,14 @@ dependencies {
         testFramework(TestFrameworkType.Platform)
     }
 
+    // HTTP and JSON
+    implementation("io.ktor:ktor-client-core:2.3.13")
+    implementation("io.ktor:ktor-client-cio:2.3.13")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.13")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.13")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+
     // JUnit 5 for pure unit tests
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
     testImplementation("org.junit.jupiter:junit-jupiter-params:5.11.3")
@@ -41,6 +50,10 @@ dependencies {
 
     // Kotlin test assertions (used by both unit and platform tests)
     testImplementation(kotlin("test"))
+
+    // Ktor MockEngine for service-level tests; coroutines-test for runTest
+    testImplementation("io.ktor:ktor-client-mock:2.3.13")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }
 
 kotlin {
