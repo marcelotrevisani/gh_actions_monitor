@@ -10,4 +10,9 @@ data class ListRunsResponse(
     @SerialName("workflow_runs") val workflowRuns: List<RunDto>
 )
 
-// ListJobsResponse is added in Task 6 alongside JobDto.
+/** GitHub's list-jobs envelope: `{ total_count, jobs: [...] }`. */
+@Serializable
+data class ListJobsResponse(
+    @SerialName("total_count") val totalCount: Int,
+    val jobs: List<JobDto>
+)
