@@ -86,23 +86,46 @@ class LogViewerPanel : JPanel(BorderLayout()) {
     fun clear() = setText("")
 
     /**
-     * Filter the visible log to the [stepNumber]-indexed top-level section
-     * (1-based — first step is 1). If the log doesn't contain enough sections,
-     * the full log stays visible and we annotate the header to explain.
+     * Filter the visible log to the section that corresponds to this step.
+     *
+     * GitHub's logs contain more `##[group]` sections than the steps list — synthetic
+     * "Set up runner", per-action "Post <name>" cleanup groups, container/network init,
+     * etc. Index-based mapping drifts as a result. We instead match by name:
+     *   1. Exact case-insensitive equality between step name and section name.
+     *   2. Step name substring of section name (or vice versa).
+     *   3. Fallback to positional index (`stepNumber - 1`) — useful when a step has
+     *      no `name:` in the workflow YAML and GitHub auto-generates one we can't
+     *      align textually.
+     * If nothing matches, the full log stays visible and the header notes why.
      */
     fun showStep(stepNumber: Int, stepName: String) {
         val sections = LogSectionParser.parse(rawText)
-        val section = sections.getOrNull(stepNumber - 1)
+        val section = pickSection(sections, stepNumber, stepName)
         if (section == null) {
             sectionLineRange = null
-            sectionLabel.text = "(step $stepNumber not found in log; showing full output)"
+            sectionLabel.text = "(step \"$stepName\" not found in log; showing full output)"
             showFullLogButton.isVisible = false
         } else {
             sectionLineRange = section.startLine until section.endLineExclusive
-            sectionLabel.text = "Step $stepNumber · ${stepName}"
+            sectionLabel.text = "Step $stepNumber · $stepName"
             showFullLogButton.isVisible = true
         }
         renderText()
+    }
+
+    private fun pickSection(sections: List<LogSection>, stepNumber: Int, stepName: String): LogSection? {
+        if (sections.isEmpty()) return null
+        val needle = stepName.trim()
+        // 1. Exact case-insensitive match.
+        sections.firstOrNull { it.name.equals(needle, ignoreCase = true) }?.let { return it }
+        // 2. Substring match either direction (handles "Run tests" vs "Run user tests" etc.).
+        sections.firstOrNull {
+            it.name.contains(needle, ignoreCase = true) ||
+                needle.contains(it.name, ignoreCase = true)
+        }?.let { return it }
+        // 3. Positional fallback. GitHub usually emits the steps in order even when names
+        //    don't match cleanly, so index gets us close.
+        return sections.getOrNull(stepNumber - 1)
     }
 
     private fun renderText() {
