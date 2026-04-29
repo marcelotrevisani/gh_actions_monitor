@@ -76,8 +76,112 @@ class PullRequestPanel(
         add(statusLabel, CARD_STATUS)
     }
 
+    /** UI-side filter state — applied client-side after Loaded transitions. */
+    private var titleQuery: String = ""
+    private var branchQuery: String = ""
+    private var stateFilter: PullRequestState = PullRequestState.OPEN
+
+    /** Most recent Loaded list, kept around so we can re-render on filter changes without re-fetching. */
+    private var lastLoaded: List<PullRequestWithRun> = emptyList()
+
+    private val titleField = com.intellij.ui.components.JBTextField().apply {
+        emptyText.text = "Filter by title…"
+        document.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent) = onChange()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent) = onChange()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent) = onChange()
+            private fun onChange() {
+                titleQuery = text.trim()
+                applyClientFilters()
+            }
+        })
+    }
+
+    private val branchField = com.intellij.ui.components.JBTextField().apply {
+        emptyText.text = "Filter by branch…"
+        document.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent) = onChange()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent) = onChange()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent) = onChange()
+            private fun onChange() {
+                branchQuery = text.trim()
+                applyClientFilters()
+            }
+        })
+    }
+
+    private val stateRadioOpen = javax.swing.JRadioButton("Open", true)
+    private val stateRadioClosed = javax.swing.JRadioButton("Closed")
+    private val stateRadioAll = javax.swing.JRadioButton("All")
+
     init {
-        add(buildToolbar().component, BorderLayout.NORTH)
+        // Group the three radios so only one is selected at a time.
+        val group = javax.swing.ButtonGroup()
+        listOf(stateRadioOpen, stateRadioClosed, stateRadioAll).forEach { group.add(it) }
+        val radioListener = java.awt.event.ActionListener { e ->
+            stateFilter = when (e.source) {
+                stateRadioOpen -> PullRequestState.OPEN
+                stateRadioClosed -> PullRequestState.CLOSED
+                stateRadioAll -> PullRequestState.ALL
+                else -> stateFilter
+            }
+            // State changes hit the API.
+            repository.refreshPullRequests(stateFilter)
+        }
+        stateRadioOpen.addActionListener(radioListener)
+        stateRadioClosed.addActionListener(radioListener)
+        stateRadioAll.addActionListener(radioListener)
+    }
+
+    private val filterPanel: JPanel = JPanel().apply {
+        layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
+        border = JBUI.Borders.empty(4, 8, 4, 8)
+        add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 2)).apply {
+            add(JBLabel("State:"))
+            add(stateRadioOpen)
+            add(stateRadioClosed)
+            add(stateRadioAll)
+        })
+        add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 2)).apply {
+            add(JBLabel("Title:"))
+            titleField.columns = 24
+            add(titleField)
+            add(JBLabel("Branch:"))
+            branchField.columns = 18
+            add(branchField)
+        })
+    }
+
+    private fun applyClientFilters() {
+        val visible = lastLoaded.filter { entry ->
+            val titleOk = titleQuery.isEmpty() || entry.pr.title.contains(titleQuery, ignoreCase = true)
+            val branchOk = branchQuery.isEmpty() || entry.pr.headRef.contains(branchQuery, ignoreCase = true)
+            titleOk && branchOk
+        }
+        renderEntries(visible)
+    }
+
+    private fun renderEntries(entries: List<PullRequestWithRun>) {
+        rootNode.removeAllChildren()
+        entries.forEach { entry ->
+            val prNode = DefaultMutableTreeNode(entry.pr)
+            if (entry.latestRun != null) {
+                prNode.add(DefaultMutableTreeNode(entry.latestRun))
+            } else {
+                prNode.add(DefaultMutableTreeNode(NO_RUN_PLACEHOLDER))
+            }
+            rootNode.add(prNode)
+        }
+        treeModel.reload()
+        expandAll()
+        cardLayout.show(cardsPanel, CARD_TREE)
+    }
+
+    init {
+        val top = JPanel(BorderLayout())
+        top.add(buildToolbar().component, BorderLayout.NORTH)
+        top.add(filterPanel, BorderLayout.CENTER)
+        add(top, BorderLayout.NORTH)
         add(cardsPanel, BorderLayout.CENTER)
         showStatus("Click Refresh to load pull requests.")
         observeRepository()
@@ -88,7 +192,7 @@ class PullRequestPanel(
             add(object : AnAction("Refresh", "Reload pull requests from GitHub", AllIcons.Actions.Refresh) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) {
-                    repository.refreshPullRequests(PullRequestState.OPEN)
+                    repository.refreshPullRequests(stateFilter)
                 }
             })
         }
@@ -108,19 +212,8 @@ class PullRequestPanel(
             is PullRequestListState.Idle -> showStatus("Click Refresh to load pull requests.")
             is PullRequestListState.Loading -> showStatus("Loading…")
             is PullRequestListState.Loaded -> {
-                rootNode.removeAllChildren()
-                state.entries.forEach { entry ->
-                    val prNode = DefaultMutableTreeNode(entry.pr)
-                    if (entry.latestRun != null) {
-                        prNode.add(DefaultMutableTreeNode(entry.latestRun))
-                    } else {
-                        prNode.add(DefaultMutableTreeNode(NO_RUN_PLACEHOLDER))
-                    }
-                    rootNode.add(prNode)
-                }
-                treeModel.reload()
-                expandAll()
-                cardLayout.show(cardsPanel, CARD_TREE)
+                lastLoaded = state.entries
+                applyClientFilters()
             }
             is PullRequestListState.Error -> showStatus(
                 "Failed${state.httpStatus?.let { " ($it)" } ?: ""}: ${state.message}"
