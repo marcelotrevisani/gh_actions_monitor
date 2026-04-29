@@ -69,7 +69,7 @@ private class ToolWindowController(
      */
     private fun buildRunView(): Pair<JComponent, List<com.intellij.openapi.Disposable>> {
         val detail = RunDetailPanel(project)
-        val list = RunListPanel(project) { run -> detail.showRun(run) }
+        val list = PullRequestPanel(project) { run -> detail.showRun(run) }
         val splitter = OnePixelSplitter(true, 0.35f).apply {
             firstComponent = list
             secondComponent = detail
