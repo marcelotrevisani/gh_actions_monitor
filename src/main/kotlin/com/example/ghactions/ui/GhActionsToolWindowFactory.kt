@@ -30,6 +30,27 @@ class GhActionsToolWindowFactory : ToolWindowFactory {
 
         val projectBus = project.messageBus.connect(toolWindow.disposable)
         projectBus.subscribe(Topics.REPO_BINDING_CHANGED, RepoBindingChangedListener { controller.refresh() })
+
+        val coordinator = project.getService(com.example.ghactions.polling.PollingCoordinator::class.java)
+        coordinator.setToolWindowVisible(toolWindow.isVisible)
+        coordinator.start()
+
+        val listenerBus = project.messageBus.connect(toolWindow.disposable)
+        listenerBus.subscribe(
+            com.intellij.openapi.wm.ex.ToolWindowManagerListener.TOPIC,
+            object : com.intellij.openapi.wm.ex.ToolWindowManagerListener {
+                override fun toolWindowShown(window: com.intellij.openapi.wm.ToolWindow) {
+                    if (window.id == ID) coordinator.setToolWindowVisible(true)
+                }
+
+                override fun stateChanged(manager: com.intellij.openapi.wm.ToolWindowManager) {
+                    // Hidden state is reported here, not via toolWindowShown — sample isVisible
+                    // for our window each transition.
+                    val tw = manager.getToolWindow(ID) ?: return
+                    coordinator.setToolWindowVisible(tw.isVisible)
+                }
+            }
+        )
     }
 
     companion object {
