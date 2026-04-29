@@ -103,6 +103,38 @@ class RunLogsArchiveTest {
     }
 
     @Test
+    fun `stepLog matches prefixed job folder (e g 0_build-and-test)`() {
+        // GitHub sometimes emits job folders with a numeric index prefix.
+        val zip = buildZip(mapOf(
+            "0_build-and-test.txt" to "whole job log",
+            "0_build-and-test/1_Set up job.txt" to "setup",
+            "0_build-and-test/5_Run swift test.txt" to "tests output"
+        ))
+        val archive = RunLogsArchive(zip)
+        assertEquals("tests output", archive.stepLog("build-and-test", stepNumber = 5, stepName = "Run tests"))
+    }
+
+    @Test
+    fun `jobLog finds prefixed root file via fuzzy match`() {
+        val zip = buildZip(mapOf("0_build-and-test.txt" to "whole log"))
+        val archive = RunLogsArchive(zip)
+        assertEquals("whole log", archive.jobLog("build-and-test"))
+    }
+
+    @Test
+    fun `listJobs surfaces both root txt files and folder names`() {
+        val zip = buildZip(mapOf(
+            "0_build-and-test.txt" to "x",
+            "0_build-and-test/1_Set up job.txt" to "y",
+            "1_lint.txt" to "x"
+        ))
+        val archive = RunLogsArchive(zip)
+        val jobs = archive.listJobs().toSet()
+        assertTrue(jobs.contains("0_build-and-test"), "should include the prefixed root .txt; got $jobs")
+        assertTrue(jobs.contains("1_lint"), "should include the second root .txt; got $jobs")
+    }
+
+    @Test
     fun `bytes are not retained beyond construction-time parse`() {
         // Defensive: confirm that mutating the input array doesn't change the parse output.
         val original = buildZip(mapOf("build.txt" to "hello"))
