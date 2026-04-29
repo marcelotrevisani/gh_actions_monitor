@@ -138,9 +138,16 @@ class RunLogsArchive(zipBytes: ByteArray) {
      * for every user step, whether `run:` shell or `uses:` action). Sibling depth-0 groups
      * inside an action body (e.g. `##[group]Getting Git version info`) stay nested.
      *
-     * Match priority: exact name → substring either direction → positional fallback
-     * (`stepNumber − 2` because the synthetic "Set up job" is step 1 in the API but has
-     * no `##[group]Run …` line in the log).
+     * Match priority:
+     *   1. Exact case-insensitive name equality.
+     *   2. Substring either direction.
+     *   3. Positional fallback (`stepNumber − 2`, since API step 1 is "Set up job" and
+     *      has no `##[group]Run …`).
+     *   4. **Synthetic-step handling** for the prelude and postlude that GitHub doesn't
+     *      delimit with `Run` groups:
+     *        - Step 1 ("Set up job") → everything before the first `##[group]Run …`.
+     *        - Step beyond `1 + sections.size` ("Complete job", post-cleanup) → everything
+     *          from the `Post job cleanup.` marker onward, if present.
      */
     private fun sliceFromJobLog(wholeLog: String, stepNumber: Int, stepName: String): String? {
         val lines = wholeLog.lines()
@@ -158,24 +165,51 @@ class RunLogsArchive(zipBytes: ByteArray) {
             }
             if (ENDGROUP_RE.find(line) != null && depth > 0) depth--
         }
-        if (starts.isEmpty()) return null
 
         val needle = stepName.trim()
-        val pickedIndex: Int = run {
-            // Exact name match.
-            starts.indexOfFirst { it.second.equals(needle, ignoreCase = true) }
+
+        // 1+2. Name-based matches (only meaningful if we have at least one Run section).
+        if (starts.isNotEmpty()) {
+            val byName = starts.indexOfFirst { it.second.equals(needle, ignoreCase = true) }
                 .takeIf { it >= 0 }
-                // Substring either direction.
                 ?: starts.indexOfFirst { (_, n) ->
                     n.contains(needle, ignoreCase = true) || needle.contains(n, ignoreCase = true)
                 }.takeIf { it >= 0 }
-                // Positional fallback.
-                ?: (stepNumber - 2).takeIf { it in starts.indices }
-                ?: return null
+            if (byName != null) return sliceSection(lines, starts, byName)
         }
 
-        val (startLine, _) = starts[pickedIndex]
-        val endLine = starts.getOrNull(pickedIndex + 1)?.first ?: lines.size
+        // 4a. Synthetic prelude: "Set up job" is API step 1 and has no Run group.
+        if (stepNumber == 1) {
+            val end = starts.firstOrNull()?.first ?: lines.size
+            return if (end > 0) lines.subList(0, end).joinToString("\n") else null
+        }
+
+        // 3. Positional fallback for the user-defined steps.
+        val sectionIndex = stepNumber - 2
+        if (sectionIndex in starts.indices) {
+            return sliceSection(lines, starts, sectionIndex)
+        }
+
+        // 4b. Synthetic postlude: "Complete job" / post-cleanup is past the last Run section.
+        if (stepNumber > 1 + starts.size) {
+            val postJobIdx = lines.indexOfFirst { it.contains(POST_JOB_MARKER) }
+            if (postJobIdx >= 0) {
+                return lines.subList(postJobIdx, lines.size).joinToString("\n")
+            }
+        }
+
+        return null
+    }
+
+    private fun sliceSection(
+        lines: List<String>,
+        starts: List<Pair<Int, String>>,
+        sectionIndex: Int
+    ): String {
+        val (startLine, _) = starts[sectionIndex]
+        val endLine = starts.getOrNull(sectionIndex + 1)?.first
+            ?: lines.indexOfFirst { it.contains(POST_JOB_MARKER) }.takeIf { it > startLine }
+            ?: lines.size
         return lines.subList(startLine, endLine).joinToString("\n")
     }
 
@@ -228,5 +262,7 @@ class RunLogsArchive(zipBytes: ByteArray) {
         private val GROUP_RE = Regex("##\\[group](.*)")
         private val ENDGROUP_RE = Regex("##\\[endgroup]")
         private const val STEP_GROUP_PREFIX = "Run "
+        /** GitHub's reliable signal that the user-defined steps are done and post-cleanup begins. */
+        private const val POST_JOB_MARKER = "Post job cleanup."
     }
 }

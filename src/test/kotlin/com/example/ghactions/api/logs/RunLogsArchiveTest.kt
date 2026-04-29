@@ -191,6 +191,66 @@ class RunLogsArchiveTest {
     }
 
     @Test
+    fun `stepLog returns the prelude for synthetic step 1 ("Set up job")`() {
+        val wholeLog = """
+            Current runner version: '2.333.1'
+            ##[group]Runner Image Provisioner
+            metadata
+            ##[endgroup]
+            ##[group]Operating System
+            macOS
+            ##[endgroup]
+            ##[group]Run actions/checkout@v4
+            with: stuff
+            ##[endgroup]
+            output
+        """.trimIndent()
+        val zip = buildZip(mapOf("0_build-and-test.txt" to wholeLog))
+        val archive = RunLogsArchive(zip)
+        val prelude = archive.stepLog("build-and-test", stepNumber = 1, stepName = "Set up job")
+        assertTrue(prelude != null && prelude.contains("Current runner version"), "Expected prelude content, got: $prelude")
+        assertTrue(prelude.contains("Operating System"), "Expected synthetic groups in prelude, got: $prelude")
+        assertTrue(!prelude.contains("Run actions/checkout"), "Prelude should not include the first Run section")
+    }
+
+    @Test
+    fun `stepLog returns the postlude for steps past the last Run section ("Complete job")`() {
+        val wholeLog = """
+            ##[group]Run swift test
+            swift test
+            ##[endgroup]
+            Test Suite passed
+            Post job cleanup.
+            git cleanup commands
+            Cleaning up orphan processes
+        """.trimIndent()
+        val zip = buildZip(mapOf("0_build-and-test.txt" to wholeLog))
+        val archive = RunLogsArchive(zip)
+        // 1 Run section + step 1 (Set up job) = 2 mappable steps. Step 11 is well past.
+        val postlude = archive.stepLog("build-and-test", stepNumber = 11, stepName = "Complete job")
+        assertTrue(postlude != null && postlude.startsWith("Post job cleanup."), "Expected postlude starting with marker, got: $postlude")
+        assertTrue(postlude.contains("Cleaning up orphan processes"), "Expected end-of-log content in postlude")
+    }
+
+    @Test
+    fun `last user-step section ends at the Post job cleanup marker, not end of log`() {
+        val wholeLog = """
+            ##[group]Run swift test
+            swift test
+            ##[endgroup]
+            Test Suite passed
+            Post job cleanup.
+            git cleanup commands
+        """.trimIndent()
+        val zip = buildZip(mapOf("0_build-and-test.txt" to wholeLog))
+        val archive = RunLogsArchive(zip)
+        // Step 2 = first Run section = 'Run swift test'. Should stop at Post job cleanup.
+        val section = archive.stepLog("build-and-test", stepNumber = 2, stepName = "Run tests")
+        assertTrue(section != null && section.contains("Test Suite passed"), "Expected swift test output, got: $section")
+        assertTrue(!section.contains("Post job cleanup"), "Last section should not include the post-job marker line")
+    }
+
+    @Test
     fun `bytes are not retained beyond construction-time parse`() {
         // Defensive: confirm that mutating the input array doesn't change the parse output.
         val original = buildZip(mapOf("build.txt" to "hello"))
