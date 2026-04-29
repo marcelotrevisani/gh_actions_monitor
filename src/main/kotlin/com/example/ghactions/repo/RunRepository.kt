@@ -2,6 +2,7 @@ package com.example.ghactions.repo
 
 import com.example.ghactions.api.GitHubApiException
 import com.example.ghactions.api.GitHubClient
+import com.example.ghactions.api.logs.RunLogsArchive
 import com.example.ghactions.domain.Job
 import com.example.ghactions.domain.JobId
 import com.example.ghactions.domain.Run
@@ -84,6 +85,14 @@ class RunRepository(
     fun logsState(jobId: JobId): StateFlow<LogState> =
         _logsByJob.computeIfAbsent(jobId) { MutableStateFlow(LogState.Idle) }.asStateFlow()
 
+    /** Per-(jobId, stepNumber) state flow. Plan 3 wires step clicks here. */
+    private val _stepLogs = ConcurrentHashMap<Pair<JobId, Int>, MutableStateFlow<LogState>>()
+    fun logsState(jobId: JobId, stepNumber: Int): StateFlow<LogState> =
+        _stepLogs.computeIfAbsent(jobId to stepNumber) { MutableStateFlow(LogState.Idle) }.asStateFlow()
+
+    /** Cached run-logs zips keyed by run id. Cleared by [invalidateAll]. */
+    private val _archivesByRun = ConcurrentHashMap<RunId, RunLogsArchive>()
+
     fun refreshRuns(perPage: Int = 30): CJob = scope.launch {
         val repo = boundRepo() ?: return@launch
         val client = clientFactory() ?: run {
@@ -138,10 +147,77 @@ class RunRepository(
         }
     }
 
+    /**
+     * Fetch (or reuse-cached) the run's log archive, extract the specific step's text, and
+     * publish to the `(jobId, stepNumber)` state flow. Falls back to [GitHubClient.getJobLogs]
+     * when the archive endpoint returns 404 (in-progress runs don't have an archive yet).
+     */
+    fun refreshStepLog(
+        runId: RunId,
+        jobId: JobId,
+        jobName: String,
+        stepNumber: Int,
+        stepName: String
+    ): CJob = scope.launch {
+        val repo = boundRepo() ?: return@launch
+        val client = clientFactory() ?: run {
+            stepFlow(jobId, stepNumber).value =
+                LogState.Error(null, "No credentials available for ${repo.host}")
+            return@launch
+        }
+        stepFlow(jobId, stepNumber).value = LogState.Loading
+
+        // Try cache first; on miss, fetch the archive from GitHub.
+        val cached = _archivesByRun[runId]
+        val archive = if (cached != null) {
+            cached
+        } else {
+            try {
+                val freshArchive = RunLogsArchive(client.getRunLogsArchive(repo, runId))
+                _archivesByRun[runId] = freshArchive
+                freshArchive
+            } catch (e: GitHubApiException) {
+                if (e.status == 404) {
+                    // In-progress runs don't have an archive yet — fall back to per-job text.
+                    stepFlow(jobId, stepNumber).value = try {
+                        LogState.Loaded(client.getJobLogs(repo, jobId))
+                    } catch (e2: GitHubApiException) {
+                        log.warn("getJobLogs fallback failed: status=${e2.status}", e2)
+                        LogState.Error(e2.status, e2.message ?: "API error")
+                    } catch (e2: Throwable) {
+                        log.warn("getJobLogs fallback threw unexpectedly", e2)
+                        LogState.Error(null, e2.message ?: e2::class.java.simpleName)
+                    }
+                    return@launch
+                }
+                log.warn("getRunLogsArchive failed: status=${e.status}", e)
+                stepFlow(jobId, stepNumber).value = LogState.Error(e.status, e.message ?: "API error")
+                return@launch
+            } catch (e: Throwable) {
+                log.warn("getRunLogsArchive threw unexpectedly", e)
+                stepFlow(jobId, stepNumber).value =
+                    LogState.Error(null, e.message ?: e::class.java.simpleName)
+                return@launch
+            }
+        }
+
+        val text = archive.stepLog(jobName, stepNumber, stepName)
+        stepFlow(jobId, stepNumber).value = if (text != null) {
+            LogState.Loaded(text)
+        } else {
+            LogState.Error(
+                null,
+                "Step $stepNumber (\"$stepName\") not found in run logs archive for job '$jobName'."
+            )
+        }
+    }
+
     fun invalidateAll() {
         _runsState.value = RunListState.Idle
         _jobsByRun.values.forEach { it.value = JobsState.Idle }
         _logsByJob.values.forEach { it.value = LogState.Idle }
+        _stepLogs.values.forEach { it.value = LogState.Idle }
+        _archivesByRun.clear()
     }
 
     override fun dispose() {
@@ -153,6 +229,9 @@ class RunRepository(
 
     private fun logsFlow(jobId: JobId): MutableStateFlow<LogState> =
         _logsByJob.computeIfAbsent(jobId) { MutableStateFlow(LogState.Idle) }
+
+    private fun stepFlow(jobId: JobId, stepNumber: Int): MutableStateFlow<LogState> =
+        _stepLogs.computeIfAbsent(jobId to stepNumber) { MutableStateFlow(LogState.Idle) }
 }
 
 /** Holder for the production GitHubClient factory — kept out of the [RunRepository] body for clarity. */
