@@ -237,33 +237,3 @@ class RunRepository(
         _stepLogs.computeIfAbsent(jobId to stepNumber) { MutableStateFlow(LogState.Idle) }
 }
 
-/** Holder for the production GitHubClient factory — kept out of the [RunRepository] body for clarity. */
-internal object ProductionClientFactory {
-    fun create(project: Project): GitHubClient? {
-        val binding = project.getService(com.example.ghactions.repo.RepoBinding::class.java).current ?: return null
-        val settings = com.example.ghactions.auth.PluginSettings.getInstance().state
-
-        val resolver = com.example.ghactions.auth.GitHubAccountResolver(
-            ideSource = com.example.ghactions.auth.BundledGithubAccountSource(),
-            patLookup = object : com.example.ghactions.auth.PatLookup {
-                override fun getToken(host: String) = com.example.ghactions.auth.PatStorage().getToken(host)
-            },
-            preferredAccountId = settings.preferredAccountId
-        )
-        val auth = resolver.resolve(binding.host) ?: return null
-
-        // For Plan 2: only PAT auth produces a usable client.
-        // IDE-account auth would require an async findCredentials() call — deferred to Plan 3.
-        val token = when (auth) {
-            is com.example.ghactions.auth.AuthSource.Pat -> auth.token
-            is com.example.ghactions.auth.AuthSource.IdeAccount -> {
-                Logger.getInstance(ProductionClientFactory::class.java)
-                    .warn("IDE-account credentials not yet wired in Plan 2; user must use a PAT for now.")
-                return null
-            }
-        }
-        val patAsAuth = com.example.ghactions.auth.AuthSource.Pat(host = binding.host, token = token)
-        val http = com.example.ghactions.api.GitHubHttp.create(binding.host, patAsAuth)
-        return GitHubClient(http)
-    }
-}
