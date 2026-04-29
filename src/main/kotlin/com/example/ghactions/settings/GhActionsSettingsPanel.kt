@@ -233,9 +233,13 @@ class GhActionsSettingsPanel {
                 is com.example.ghactions.auth.AuthSource.Pat -> "PAT ($baseUrl)"
                 is com.example.ghactions.auth.AuthSource.IdeAccount -> "IDE account ${auth.accountId} ($baseUrl)"
             }
-            ApplicationManager.getApplication().invokeLater {
-                authStatusLabel.text = text
-            }
+            // ModalityState.any() so the EDT update lands while the Settings dialog is
+            // modal. Without it, the runnable is queued but never runs — same bug as Test
+            // connection in Plan 1.
+            ApplicationManager.getApplication().invokeLater(
+                { authStatusLabel.text = text },
+                ModalityState.any()
+            )
         }
     }
 
