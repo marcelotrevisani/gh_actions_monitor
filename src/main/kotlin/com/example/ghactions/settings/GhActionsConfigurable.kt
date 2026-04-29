@@ -18,6 +18,11 @@ class GhActionsConfigurable : Configurable {
 
     override fun apply() {
         panel?.apply()
+        // Notify subscribers (RunRepository, EmptyStatePanel, tool window factory)
+        // that credentials may have changed.
+        com.intellij.openapi.application.ApplicationManager.getApplication().messageBus
+            .syncPublisher(com.example.ghactions.events.Topics.AUTH_CHANGED)
+            .onAuthChanged()
     }
 
     override fun reset() {
