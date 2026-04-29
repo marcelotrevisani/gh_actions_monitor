@@ -115,7 +115,7 @@ class LogViewerPanel : JPanel(BorderLayout()) {
      * section picker dropdown to the right lets you navigate manually in that case.
      */
     fun showStep(stepNumber: Int, stepName: String) {
-        val match = pickSection(stepName)
+        val match = pickSection(stepNumber, stepName)
         if (match == null) {
             sectionLineRange = null
             sectionLabel.text = "(step \"$stepName\" not found in log; showing full output — pick from Section dropdown if needed)"
@@ -127,14 +127,22 @@ class LogViewerPanel : JPanel(BorderLayout()) {
         }
     }
 
-    private fun pickSection(stepName: String): LogSection? {
+    private fun pickSection(stepNumber: Int, stepName: String): LogSection? {
         if (sections.isEmpty()) return null
         val needle = stepName.trim()
+        // 1. Exact case-insensitive name match.
         sections.firstOrNull { it.name.equals(needle, ignoreCase = true) }?.let { return it }
-        return sections.firstOrNull {
+        // 2. Substring match either direction (handles 'Run swift test' vs YAML name 'Run tests').
+        sections.firstOrNull {
             it.name.contains(needle, ignoreCase = true) ||
                 needle.contains(it.name, ignoreCase = true)
-        }
+        }?.let { return it }
+        // 3. Positional alignment: API step #1 is the synthetic "Set up job" with no log
+        //    section, then every subsequent step has a `##[group]Run …` line. So API step N
+        //    (N ≥ 2) maps to log section index (N − 2). Reliable now that we only count
+        //    `##[group]Run …` lines as section starts.
+        val sectionIndex = stepNumber - 2
+        return sections.getOrNull(sectionIndex)
     }
 
     private fun applySection(section: LogSection) {
