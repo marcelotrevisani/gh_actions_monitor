@@ -67,6 +67,28 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
             response.bodyAsText()
         }
 
+    /**
+     * `GET /repos/{owner}/{repo}/actions/runs/{run_id}/logs`. Downloads the entire run's
+     * log archive as a zip. GitHub redirects to a signed download URL — Ktor follows the
+     * redirect transparently, so the body we return is the raw zip bytes from the final
+     * response.
+     *
+     * Throws [GitHubApiException] with status 404 for in-progress runs (the archive is
+     * only available once the run completes). Callers should fall back to [getJobLogs]
+     * for that case.
+     */
+    suspend fun getRunLogsArchive(repo: BoundRepo, runId: com.example.ghactions.domain.RunId): ByteArray =
+        withContext(Dispatchers.IO) {
+            val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/logs")
+            if (!response.status.isSuccess()) {
+                throw GitHubApiException(
+                    status = response.status.value,
+                    message = "GET run logs archive failed: ${response.bodyAsText().take(200)}"
+                )
+            }
+            response.body<ByteArray>()
+        }
+
     override fun close() {
         http.close()
     }
