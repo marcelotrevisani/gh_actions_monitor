@@ -1,8 +1,17 @@
 package com.example.ghactions.auth
 
-/** Anything that can list IDE-configured GitHub accounts. Pulled out for testability. */
+/** Anything that can list IDE-configured GitHub accounts and look up their tokens. */
 interface IdeGithubAccountSource {
     fun listAccounts(): List<IdeAccountInfo>
+
+    /**
+     * Returns the persistent token for the account identified by [accountId], or null if
+     * the account doesn't exist, has no credentials stored, or the lookup fails.
+     *
+     * Default returns null — convenient for tests that only need the listing surface
+     * (the resolver still works in PAT-only mode when this returns null).
+     */
+    suspend fun findToken(accountId: String): String? = null
 }
 
 data class IdeAccountInfo(val id: String, val host: String)
@@ -74,5 +83,20 @@ class BundledGithubAccountSource : IdeGithubAccountSource {
     } catch (e: Throwable) {
         log.warn("Failed to read IDE GitHub accounts; falling back to empty list", e)
         emptyList()
+    }
+
+    override suspend fun findToken(accountId: String): String? = try {
+        val mgr = com.intellij.openapi.components.service<
+            org.jetbrains.plugins.github.authentication.accounts.GHAccountManager>()
+        val account = mgr.accountsState.value.firstOrNull { it.id == accountId }
+        if (account == null) {
+            log.warn("findToken: no IDE GitHub account with id=$accountId")
+            null
+        } else {
+            mgr.findCredentials(account)
+        }
+    } catch (e: Throwable) {
+        log.warn("findToken: lookup failed for id=$accountId", e)
+        null
     }
 }
