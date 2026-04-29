@@ -37,6 +37,19 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
         response.body<ListRunsResponse>().workflowRuns.map { it.toDomain() }
     }
 
+    /** `GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs`. */
+    suspend fun listJobs(repo: BoundRepo, runId: com.example.ghactions.domain.RunId): List<com.example.ghactions.domain.Job> =
+        withContext(Dispatchers.IO) {
+            val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/jobs")
+            if (!response.status.isSuccess()) {
+                throw GitHubApiException(
+                    status = response.status.value,
+                    message = "GET jobs failed: ${response.bodyAsText().take(200)}"
+                )
+            }
+            response.body<com.example.ghactions.api.dto.ListJobsResponse>().jobs.map { it.toDomain() }
+        }
+
     override fun close() {
         http.close()
     }
