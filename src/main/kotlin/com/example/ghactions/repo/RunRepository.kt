@@ -205,11 +205,12 @@ class RunRepository(
         stepFlow(jobId, stepNumber).value = if (text != null) {
             LogState.Loaded(text)
         } else {
-            val available = archive.listJobs().joinToString(", ").ifEmpty { "<empty archive>" }
+            val stepFiles = archive.listStepFiles(jobName).joinToString(", ").ifEmpty { "<no step files>" }
+            val jobs = archive.listJobs().joinToString(", ").ifEmpty { "<empty archive>" }
             LogState.Error(
                 null,
-                "Step $stepNumber (\"$stepName\") not found in run logs archive for job '$jobName'. " +
-                    "Archive contains: $available"
+                "Step $stepNumber (\"$stepName\") not found for job '$jobName'. " +
+                    "Jobs in archive: $jobs. Step files for this job: $stepFiles"
             )
         }
     }

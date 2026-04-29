@@ -55,6 +55,26 @@ class RunLogsArchive(zipBytes: ByteArray) {
     }
 
     /**
+     * Returns the file names (without folder prefix) of every entry under any folder
+     * fuzzy-matching [jobName]. Diagnostic helper — used by the repository to surface
+     * the actual layout in error messages when step extraction misses.
+     */
+    fun listStepFiles(jobName: String): List<String> {
+        val matchingFolders = entries.keys
+            .mapNotNull { key ->
+                val slash = key.indexOf('/')
+                if (slash > 0) key.substring(0, slash) else null
+            }
+            .distinct()
+            .filter { folder -> fuzzyJobMatch(folder, jobName) }
+
+        return entries.keys
+            .filter { key -> matchingFolders.any { folder -> key.startsWith("$folder/") } }
+            .map { it.substringAfter('/') }
+            .sorted()
+    }
+
+    /**
      * Whole-job log text. Tries (in order): `<jobName>.txt`, then any root-level `.txt`
      * whose base name fuzzy-matches `jobName`.
      */
