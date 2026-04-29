@@ -17,6 +17,10 @@ import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.components.JBTextField
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComboBox
 import javax.swing.JPasswordField
@@ -35,6 +39,9 @@ class GhActionsSettingsPanel {
 
     private val tokenField = JPasswordField(40)
     private val statusLabel = JBLabel(" ")
+    private val authStatusLabel = JBLabel(" ").apply {
+        foreground = com.intellij.util.ui.UIUtil.getContextHelpForeground()
+    }
 
     // IDE accounts dropdown. The first entry is a sentinel meaning "(none — use token below)".
     private data class AccountChoice(val id: String?, val label: String) {
@@ -54,6 +61,10 @@ class GhActionsSettingsPanel {
     // Segmented button references for manual reset
     private var notificationLevelButton: SegmentedButton<String>? = null
     private var viewModeButton: SegmentedButton<String>? = null
+
+    init {
+        refreshAuthStatus()
+    }
 
     val component: DialogPanel = panel {
         group("Connection") {
@@ -84,6 +95,9 @@ class GhActionsSettingsPanel {
                             "plugin handles the github.com OAuth flow there. Reopen this dialog after " +
                             "adding an account to refresh the dropdown above."
                     )
+            }
+            row("Currently active:") {
+                cell(authStatusLabel)
             }
         }
         group("Behavior") {
@@ -138,6 +152,7 @@ class GhActionsSettingsPanel {
             pendingToken = null
             tokenField.text = ""
         }
+        refreshAuthStatus()
     }
 
     fun reset() {
@@ -192,8 +207,36 @@ class GhActionsSettingsPanel {
                     is TestConnection.Result.Success -> "Connected as @${result.login}"
                     is TestConnection.Result.Failure -> "Failed: ${result.message}"
                 }
+                refreshAuthStatus()
             }, modality)
         }.apply { name = "GhActions-TestConnection"; isDaemon = true }.start()
+    }
+
+    /**
+     * Resolve current credentials for the configured base URL and update [authStatusLabel].
+     * Self-launching coroutine on `Dispatchers.IO`; settles within ~10ms.
+     */
+    @OptIn(DelicateCoroutinesApi::class)
+    private fun refreshAuthStatus() {
+        val baseUrl = state.baseUrl
+        GlobalScope.launch(Dispatchers.IO) {
+            val resolver = com.example.ghactions.auth.GitHubAccountResolver(
+                ideSource = ideAccountSource,
+                patLookup = object : com.example.ghactions.auth.PatLookup {
+                    override fun getToken(host: String) = patStorage.getToken(host)
+                },
+                preferredAccountId = state.preferredAccountId
+            )
+            val resolved = resolver.resolveAuth(baseUrl)
+            val text = when (val auth = resolved?.auth) {
+                null -> "nothing — configure above"
+                is com.example.ghactions.auth.AuthSource.Pat -> "PAT ($baseUrl)"
+                is com.example.ghactions.auth.AuthSource.IdeAccount -> "IDE account ${auth.accountId} ($baseUrl)"
+            }
+            ApplicationManager.getApplication().invokeLater {
+                authStatusLabel.text = text
+            }
+        }
     }
 
     private fun manageAccounts() {
