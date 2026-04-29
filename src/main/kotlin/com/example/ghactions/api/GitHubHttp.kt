@@ -7,8 +7,8 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.observer.ResponseObserver
 import io.ktor.http.HttpHeaders
-import io.ktor.http.URLBuilder
 import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -18,17 +18,20 @@ import kotlinx.serialization.json.Json
  */
 object GitHubHttp {
 
-    /** User agent string sent with every request. Bumped manually when the plugin version changes. */
     private const val USER_AGENT = "gh-actions-monitor/0.1"
 
     /**
      * Constructs a client. Pass [engine]=null in production (the CIO engine is used) or a
      * `MockEngine` from tests. [baseUrl] is e.g. `https://api.github.com` (no trailing slash).
+     *
+     * [onResponse] is invoked on the IO dispatcher for every response (success or failure)
+     * and is the integration point for `RateLimitTracker`. Tests typically pass `null`.
      */
     fun create(
         baseUrl: String,
         auth: AuthSource,
-        engine: HttpClientEngine? = null
+        engine: HttpClientEngine? = null,
+        onResponse: ((RateLimitInfo) -> Unit)? = null
     ): HttpClient {
         val cleanBase = baseUrl.trimEnd('/')
 
@@ -44,8 +47,14 @@ object GitHubHttp {
                 requestTimeoutMillis = 30_000
                 socketTimeoutMillis = 30_000
             }
+            if (onResponse != null) {
+                install(ResponseObserver) {
+                    onResponse { response ->
+                        onResponse(RateLimitInfo.fromHeaders(response.headers))
+                    }
+                }
+            }
             defaultRequest {
-                // Resolve relative paths against the base URL.
                 url.takeFrom(cleanBase)
                 headers.append(HttpHeaders.Accept, "application/vnd.github+json")
                 headers.append("X-GitHub-Api-Version", "2022-11-28")
@@ -58,9 +67,6 @@ object GitHubHttp {
 
     private fun authHeader(auth: AuthSource): String = when (auth) {
         is AuthSource.Pat -> "token ${auth.token}"
-        // IdeAccount tokens are looked up at request time by [GitHubClient]'s caller; for now
-        // we treat IdeAccount as a placeholder until the IDE-account credential
-        // lookup is wired (deferred to a later plan). PAT auth is fully functional.
         is AuthSource.IdeAccount -> "token <pending-ide-account-credentials>"
     }
 }

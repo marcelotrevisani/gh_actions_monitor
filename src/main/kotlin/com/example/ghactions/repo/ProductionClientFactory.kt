@@ -42,7 +42,12 @@ internal object ProductionClientFactory {
         // `Authorization` header is "token <X>" regardless of whether <X> came from a PAT
         // input or an IDE-account credential lookup.
         val patAsAuth = AuthSource.Pat(host = binding.host, token = resolved.token)
-        val http = GitHubHttp.create(binding.host, patAsAuth)
+        val tracker = project.getService(com.example.ghactions.api.RateLimitTracker::class.java)
+        val http = GitHubHttp.create(
+            baseUrl = binding.host,
+            auth = patAsAuth,
+            onResponse = tracker::update
+        )
         return GitHubClient(http)
     }
 }
