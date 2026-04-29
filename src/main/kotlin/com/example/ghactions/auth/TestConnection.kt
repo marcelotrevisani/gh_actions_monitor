@@ -2,7 +2,7 @@ package com.example.ghactions.auth
 
 import com.intellij.openapi.diagnostic.Logger
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 
 /**
  * Verifies that a credential can call `GET /user` against a host. Returns either the
@@ -20,7 +20,7 @@ object TestConnection {
     }
 
     fun probe(baseUrl: String, token: String): Result {
-        val url = URL(baseUrl.trimEnd('/') + "/user")
+        val url = URI.create(baseUrl.trimEnd('/') + "/user").toURL()
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 5_000
