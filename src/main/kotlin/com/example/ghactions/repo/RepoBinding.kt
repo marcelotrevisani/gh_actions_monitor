@@ -42,6 +42,18 @@ class RepoBinding(private val project: Project) : Disposable {
         }
     }
 
+    /**
+     * The local checkout's current branch name, or null for: detached HEAD, no git
+     * repository, or no current branch known. Read each call — the underlying
+     * `GitRepository.currentBranch` updates as the user switches branches.
+     */
+    val currentBranch: String?
+        get() {
+            val mgr = GitRepositoryManager.getInstance(project)
+            val repo = mgr.repositories.firstOrNull() ?: return null
+            return repo.currentBranch?.name
+        }
+
     private fun computeBoundRepo(): BoundRepo? {
         val mgr = GitRepositoryManager.getInstance(project)
         val repo = mgr.repositories.firstOrNull() ?: return null
