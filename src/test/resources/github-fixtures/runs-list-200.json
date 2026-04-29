@@ -1,0 +1,41 @@
+{
+  "total_count": 2,
+  "workflow_runs": [
+    {
+      "id": 30433642,
+      "name": "Build",
+      "head_branch": "main",
+      "head_sha": "009b8a3a9ccbb128af87f9b1c0f4c62e8a304f6d",
+      "path": ".github/workflows/build.yml",
+      "display_title": "Update README",
+      "run_number": 562,
+      "event": "push",
+      "status": "in_progress",
+      "conclusion": null,
+      "workflow_id": 159038,
+      "url": "https://api.github.com/repos/octo/Hello-World/actions/runs/30433642",
+      "html_url": "https://github.com/octo/Hello-World/actions/runs/30433642",
+      "created_at": "2020-01-22T19:33:08Z",
+      "updated_at": "2020-01-22T19:33:08Z",
+      "actor": { "login": "octocat", "id": 1 }
+    },
+    {
+      "id": 30433500,
+      "name": "Lint",
+      "head_branch": "feat/x",
+      "head_sha": "abcd1234567890abcdef",
+      "path": ".github/workflows/lint.yml",
+      "display_title": "Refactor",
+      "run_number": 14,
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "workflow_id": 159039,
+      "url": "https://api.github.com/repos/octo/Hello-World/actions/runs/30433500",
+      "html_url": "https://github.com/octo/Hello-World/actions/runs/30433500",
+      "created_at": "2020-01-21T18:30:00Z",
+      "updated_at": "2020-01-21T18:35:00Z",
+      "actor": { "login": "hubot", "id": 2 }
+    }
+  ]
+}
