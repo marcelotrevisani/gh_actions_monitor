@@ -7,6 +7,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
@@ -28,12 +29,7 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
         val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/runs") {
             parameter("per_page", perPage)
         }
-        if (!response.status.isSuccess()) {
-            throw GitHubApiException(
-                status = response.status.value,
-                message = "GET runs failed: ${response.bodyAsText().take(200)}"
-            )
-        }
+        if (!response.status.isSuccess()) fail(response, "runs")
         response.body<ListRunsResponse>().workflowRuns.map { it.toDomain() }
     }
 
@@ -41,12 +37,7 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     suspend fun listJobs(repo: BoundRepo, runId: com.example.ghactions.domain.RunId): List<com.example.ghactions.domain.Job> =
         withContext(Dispatchers.IO) {
             val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/jobs")
-            if (!response.status.isSuccess()) {
-                throw GitHubApiException(
-                    status = response.status.value,
-                    message = "GET jobs failed: ${response.bodyAsText().take(200)}"
-                )
-            }
+            if (!response.status.isSuccess()) fail(response, "jobs")
             response.body<com.example.ghactions.api.dto.ListJobsResponse>().jobs.map { it.toDomain() }
         }
 
@@ -58,12 +49,7 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     suspend fun getJobLogs(repo: BoundRepo, jobId: com.example.ghactions.domain.JobId): String =
         withContext(Dispatchers.IO) {
             val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/jobs/${jobId.value}/logs")
-            if (!response.status.isSuccess()) {
-                throw GitHubApiException(
-                    status = response.status.value,
-                    message = "GET logs failed: ${response.bodyAsText().take(200)}"
-                )
-            }
+            if (!response.status.isSuccess()) fail(response, "logs")
             response.bodyAsText()
         }
 
@@ -80,12 +66,7 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     suspend fun getRunLogsArchive(repo: BoundRepo, runId: com.example.ghactions.domain.RunId): ByteArray =
         withContext(Dispatchers.IO) {
             val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/logs")
-            if (!response.status.isSuccess()) {
-                throw GitHubApiException(
-                    status = response.status.value,
-                    message = "GET run logs archive failed: ${response.bodyAsText().take(200)}"
-                )
-            }
+            if (!response.status.isSuccess()) fail(response, "run logs archive")
             response.body<ByteArray>()
         }
 
@@ -105,13 +86,18 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
             parameter("state", state.wireValue.ifEmpty { "all" })
             parameter("per_page", perPage)
         }
-        if (!response.status.isSuccess()) {
-            throw GitHubApiException(
-                status = response.status.value,
-                message = "GET pulls failed: ${response.bodyAsText().take(200)}"
-            )
-        }
+        if (!response.status.isSuccess()) fail(response, "pulls")
         response.body<List<com.example.ghactions.api.dto.PullRequestDto>>().map { it.toDomain() }
+    }
+
+    private suspend fun fail(response: HttpResponse, label: String): Nothing {
+        val body = response.bodyAsText()
+        val info = RateLimitInfo.fromHeaders(response.headers)
+        val status = response.status.value
+        val isRateLimited = status == 429 || (status == 403 && info.remaining == 0)
+        val message = "GET $label failed: ${body.take(200)}"
+        if (isRateLimited) throw RateLimitedException(status = status, message = message, info = info)
+        throw GitHubApiException(status = status, message = message)
     }
 
     override fun close() {
@@ -120,7 +106,18 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
 }
 
 /** Thrown for any non-2xx response from GitHub. The message is truncated for log safety. */
-class GitHubApiException(
+open class GitHubApiException(
     val status: Int,
     message: String
 ) : RuntimeException(message)
+
+/**
+ * Specialised [GitHubApiException] for the rate-limit cases — `429`, or `403` with
+ * `X-RateLimit-Remaining: 0`. Callers (esp. `PollingCoordinator`) catch this to back
+ * off until the reset window passes.
+ */
+class RateLimitedException(
+    status: Int,
+    message: String,
+    val info: RateLimitInfo
+) : GitHubApiException(status = status, message = message)
