@@ -54,6 +54,7 @@ dependencies {
     // Ktor MockEngine for service-level tests; coroutines-test for runTest
     testImplementation("io.ktor:ktor-client-mock:2.3.13")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("io.mockk:mockk:1.13.13")
 }
 
 kotlin {
