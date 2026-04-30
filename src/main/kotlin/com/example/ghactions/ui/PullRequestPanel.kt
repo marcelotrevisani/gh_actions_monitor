@@ -42,12 +42,14 @@ import javax.swing.tree.TreeSelectionModel
 
 /**
  * Top half of the tool window: a tree of pull requests, each with its latest workflow
- * run as the only child. Selecting a run calls [onRunSelected] so the bottom panel
- * (`RunDetailPanel`) can refresh.
+ * runs as children. Selecting a run calls [onRunSelected]; selecting a PR (or any non-run
+ * node) calls [onSelectionCleared] so the bottom panel resets — otherwise stale data
+ * from the previously-selected run sticks around when the user switches PRs.
  */
 class PullRequestPanel(
     project: Project,
-    private val onRunSelected: (Run) -> Unit
+    private val onRunSelected: (Run) -> Unit,
+    private val onSelectionCleared: () -> Unit = {}
 ) : JPanel(BorderLayout()), Disposable {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -61,8 +63,9 @@ class PullRequestPanel(
         selectionModel.selectionMode = TreeSelectionModel.SINGLE_TREE_SELECTION
         isRootVisible = false
         addTreeSelectionListener { e ->
-            val node = e.path.lastPathComponent as? DefaultMutableTreeNode ?: return@addTreeSelectionListener
-            (node.userObject as? Run)?.let(onRunSelected)
+            val node = e.path.lastPathComponent as? DefaultMutableTreeNode
+            val payload = node?.userObject
+            if (payload is Run) onRunSelected(payload) else onSelectionCleared()
         }
     }
 

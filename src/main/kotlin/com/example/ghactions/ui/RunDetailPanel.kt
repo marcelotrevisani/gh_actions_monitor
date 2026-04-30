@@ -113,6 +113,11 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         rootNode.userObject = run
         rootNode.removeAllChildren()
         treeModel.reload()
+        // Clear the log viewer too — otherwise the previously-selected step's content
+        // bleeds across run switches until the user clicks a step in the new run.
+        currentLogFlowJob?.cancel()
+        currentLogFlowJob = null
+        logViewer.clear()
         repository.refreshJobs(run.id)
         currentRunFlowJob?.cancel()
         currentRunFlowJob = scope.launch {
@@ -121,6 +126,24 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         summaryPanel.showRun(run.id)
         annotationsPanel.showRun(run.id)
         artifactsPanel.showRun(run.id)
+    }
+
+    /**
+     * Reset the bottom pane to its empty state. Called when the user selects a PR row
+     * (no run yet) or otherwise clears the selection in the upper tree.
+     */
+    fun clear() {
+        currentRunFlowJob?.cancel()
+        currentRunFlowJob = null
+        currentLogFlowJob?.cancel()
+        currentLogFlowJob = null
+        rootNode.userObject = "(no run selected)"
+        rootNode.removeAllChildren()
+        treeModel.reload()
+        logViewer.clear()
+        summaryPanel.clear()
+        annotationsPanel.clear()
+        artifactsPanel.clear()
     }
 
     private fun renderJobs(state: JobsState) {
