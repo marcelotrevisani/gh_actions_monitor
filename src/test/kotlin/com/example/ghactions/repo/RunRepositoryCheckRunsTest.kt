@@ -52,8 +52,8 @@ class RunRepositoryCheckRunsTest {
             job(1, "build", checkRunId = 11),
             job(2, "test", checkRunId = 22)
         )
-        coEvery { client.getStepSummaryRaw(repo, runId, JobId(1)) } returns "# build markdown"
-        coEvery { client.getStepSummaryRaw(repo, runId, JobId(2)) } returns null  // no step summary
+        coEvery { client.getStepSummaryRaw("https://example.com/job/1") } returns "# build markdown"
+        coEvery { client.getStepSummaryRaw("https://example.com/job/2") } returns null  // no step summary
         coEvery { client.getCheckRun(repo, CheckRunId(11)) } returns
             CheckRunOutput(title = "Build", summary = "build OK", text = null, annotationsCount = 0)
         coEvery { client.getCheckRun(repo, CheckRunId(22)) } returns
@@ -81,8 +81,8 @@ class RunRepositoryCheckRunsTest {
             job(1, "build", checkRunId = null),
             job(2, "test", checkRunId = 22)
         )
-        coEvery { client.getStepSummaryRaw(repo, runId, JobId(1)) } returns "build raw"
-        coEvery { client.getStepSummaryRaw(repo, runId, JobId(2)) } returns null
+        coEvery { client.getStepSummaryRaw("https://example.com/job/1") } returns "build raw"
+        coEvery { client.getStepSummaryRaw("https://example.com/job/2") } returns null
         coEvery { client.getCheckRun(repo, CheckRunId(22)) } returns
             CheckRunOutput(title = "Test", summary = "ok", text = null, annotationsCount = 0)
         val repository = newRepo(client)
