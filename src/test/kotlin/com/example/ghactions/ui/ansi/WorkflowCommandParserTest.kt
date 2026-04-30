@@ -54,4 +54,32 @@ class WorkflowCommandParserTest {
         val c = WorkflowCommandParser.parseLine("    ::warning::indented")
         assertEquals(WorkflowCommand(CommandLevel.WARNING, "indented"), c)
     }
+
+    @Test
+    fun `parseGroupMarker recognises hashhash group open`() {
+        assertEquals(
+            GroupMarker.Open("Set up Job"),
+            WorkflowCommandParser.parseGroupMarker("##[group]Set up Job")
+        )
+    }
+
+    @Test
+    fun `parseGroupMarker recognises legacy colon group open`() {
+        assertEquals(
+            GroupMarker.Open("install deps"),
+            WorkflowCommandParser.parseGroupMarker("::group::install deps")
+        )
+    }
+
+    @Test
+    fun `parseGroupMarker recognises endgroup in both formats`() {
+        assertEquals(GroupMarker.Close, WorkflowCommandParser.parseGroupMarker("##[endgroup]"))
+        assertEquals(GroupMarker.Close, WorkflowCommandParser.parseGroupMarker("::endgroup::"))
+    }
+
+    @Test
+    fun `parseGroupMarker returns null for plain text`() {
+        kotlin.test.assertNull(WorkflowCommandParser.parseGroupMarker("hello"))
+        kotlin.test.assertNull(WorkflowCommandParser.parseGroupMarker("##[error]not a group"))
+    }
 }

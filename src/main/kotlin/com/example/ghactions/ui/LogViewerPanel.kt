@@ -74,15 +74,27 @@ class LogViewerPanel : JPanel(BorderLayout()) {
                 rawText.lineSequence().joinToString("\n") { stripTimestamp(it) }
             }
             // Pre-pass: swap workflow command markers (::error / ##[error] / etc.) for a
-            // colour-coded "[ERROR file:line] message" rendition. Lines that don't match
-            // pass through unchanged for the AnsiParser to handle.
-            val withMarkers = withoutTimestamps.lineSequence().joinToString("\n") { line ->
+            // colour-coded "[ERROR file:line] message" rendition; render group markers as
+            // bold cyan headers; drop endgroup lines entirely. Lines that don't match
+            // either parser pass through unchanged for the AnsiParser to handle.
+            val withMarkers = withoutTimestamps.lineSequence().mapNotNull { line ->
                 val cmd = com.example.ghactions.ui.ansi.WorkflowCommandParser.parseLine(line)
-                    ?: return@joinToString line
-                formatMarkerLine(cmd)
-            }
+                if (cmd != null) return@mapNotNull formatMarkerLine(cmd)
+                val group = com.example.ghactions.ui.ansi.WorkflowCommandParser.parseGroupMarker(line)
+                if (group != null) return@mapNotNull formatGroupMarker(group)
+                line
+            }.joinToString("\n")
             textPane.setSpans(AnsiParser.parse(withMarkers))
         }
+    }
+
+    /**
+     * Group open → bold cyan "▼ name" header. Group close → null (line dropped) so the
+     * raw `##[endgroup]` syntax doesn't leak into the visible log.
+     */
+    private fun formatGroupMarker(group: com.example.ghactions.ui.ansi.GroupMarker): String? = when (group) {
+        is com.example.ghactions.ui.ansi.GroupMarker.Open -> "[1;36m▼ ${group.name}[0m"
+        is com.example.ghactions.ui.ansi.GroupMarker.Close -> null
     }
 
     private fun formatMarkerLine(cmd: com.example.ghactions.ui.ansi.WorkflowCommand): String {

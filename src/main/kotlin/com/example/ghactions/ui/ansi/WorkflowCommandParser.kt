@@ -24,6 +24,9 @@ object WorkflowCommandParser {
         """^\s*##\[(error|warning|notice)\](.*)$"""
     )
 
+    private val GROUP_OPEN_RE = Regex("""^\s*(?:##\[group\]|::group::)(.*)$""")
+    private val GROUP_CLOSE_RE = Regex("""^\s*(?:##\[endgroup\]|::endgroup::)\s*$""")
+
     fun parseLine(line: String): WorkflowCommand? {
         COLON_RE.matchEntire(line)?.let { match ->
             val level = level(match.groupValues[1]) ?: return null
@@ -39,6 +42,13 @@ object WorkflowCommandParser {
             val level = level(match.groupValues[1]) ?: return null
             return WorkflowCommand(level = level, message = match.groupValues[2])
         }
+        return null
+    }
+
+    /** Recognise group open/close markers. Independent of [parseLine]. */
+    fun parseGroupMarker(line: String): GroupMarker? {
+        if (GROUP_CLOSE_RE.matches(line)) return GroupMarker.Close
+        GROUP_OPEN_RE.matchEntire(line)?.let { return GroupMarker.Open(it.groupValues[1].trim()) }
         return null
     }
 
