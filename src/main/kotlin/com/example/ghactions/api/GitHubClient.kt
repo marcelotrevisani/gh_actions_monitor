@@ -149,26 +149,45 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     }
 
     /**
-     * `GET <jobHtmlUrl>/summary_raw`.
+     * `GET https://github.com/{owner}/{repo}/actions/runs/{run_id}/jobs/{job_id}/summary_raw`.
      *
      * Undocumented endpoint on the *web* host (not `api.github.com`) that returns the raw
      * markdown a job's steps wrote to `$GITHUB_STEP_SUMMARY`. The REST check-run output
      * fields don't always carry this content, so the web URL is the only stable path to
      * the summary the GitHub UI displays.
      *
-     * URL construction follows ipdxco/job-summary-url-action: append `/summary_raw` to
-     * the job's API-returned `html_url` (which already encodes the right path segments
-     * — `/job/` not `/jobs/`, plus the correct `/attempts/{N}` segment for re-runs).
+     * Note: the path uses **plural `/jobs/`** even though the REST API's `job.html_url`
+     * field uses singular `/job/`. They're different URL spaces — the singular path is
+     * the user-facing job page, the plural path is the raw-fetch endpoint.
      *
      * Auth: the same `Authorization: token <PAT>` header works on github.com as on the API
      * for this URL. Returns null on 404 (job has no step summary). Throws for other errors.
      */
-    suspend fun getStepSummaryRaw(jobHtmlUrl: String): String? = withContext(Dispatchers.IO) {
-        val url = jobHtmlUrl.removeSuffix("/") + "/summary_raw"
+    suspend fun getStepSummaryRaw(
+        repo: BoundRepo,
+        runId: com.example.ghactions.domain.RunId,
+        jobId: com.example.ghactions.domain.JobId
+    ): String? = withContext(Dispatchers.IO) {
+        val webHost = repo.webBaseUrl()
+        val url = "$webHost/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/jobs/${jobId.value}/summary_raw"
         val response = http.get(url)
         if (response.status.value == 404) return@withContext null
         if (!response.status.isSuccess()) fail(response, "step summary")
         response.bodyAsText()
+    }
+
+    /**
+     * Derive the GitHub web host from the API host stored on [BoundRepo].
+     * - `https://api.github.com` → `https://github.com`
+     * - `https://ghe.example.com/api/v3` → `https://ghe.example.com`
+     */
+    private fun BoundRepo.webBaseUrl(): String {
+        val h = this.host
+        return when {
+            h == "https://api.github.com" -> "https://github.com"
+            h.endsWith("/api/v3") -> h.removeSuffix("/api/v3")
+            else -> h
+        }
     }
 
     /**

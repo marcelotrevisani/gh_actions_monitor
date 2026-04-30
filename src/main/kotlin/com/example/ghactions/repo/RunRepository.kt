@@ -236,11 +236,10 @@ class RunRepository(
             val sections = jobs.map { job ->
                 // Try the undocumented summary_raw endpoint first — it's the authoritative
                 // source for `$GITHUB_STEP_SUMMARY` content (the REST check-run output
-                // doesn't always carry it). We append "/summary_raw" to the job's API-
-                // returned html_url so we get the right path (singular "/job/", correct
-                // attempt segment), matching ipdxco/job-summary-url-action.
+                // doesn't always carry it). Path uses *plural* /jobs/ — different URL
+                // space than the API's job.html_url field (which is /job/ singular).
                 val raw = try {
-                    client.getStepSummaryRaw(job.htmlUrl)
+                    client.getStepSummaryRaw(repo, runId, job.id)
                 } catch (e: Throwable) {
                     log.warn("getStepSummaryRaw(job=${job.id.value}) failed", e)
                     null
