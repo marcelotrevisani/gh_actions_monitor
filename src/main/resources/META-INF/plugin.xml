@@ -1,5 +1,5 @@
 <idea-plugin>
-    <id>com.example.ghactions</id>
+    <id>gh_actions_monitor.marcelotrevisani</id>
     <name>GitHub Actions Monitor</name>
     <vendor email="marceloduartetrevisani@gmail.com">Marcelo Trevisani</vendor>
     <description><![CDATA[

@@ -93,10 +93,6 @@ intellijPlatform {
             // pluginUntilBuild = 261.* lets the plugin install on 2026.1.x even though we
             // can't verify against it here yet; the API surface is stable since 2024.3.
         }
-        // The 'com.example' id prefix is a placeholder; change to a real id before
-        // publishing to the JetBrains Marketplace. Until then, suppress the verifier's
-        // prefix check rather than blocking the build.
-        freeArgs = listOf("-mute", "ForbiddenPluginIdPrefix")
     }
     // Marketplace publishing — driven by `./gradlew publishPlugin` in the release
     // workflow. Reads PUBLISH_TOKEN from the environment; the workflow forwards it
