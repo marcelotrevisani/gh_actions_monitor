@@ -83,6 +83,11 @@ intellijPlatform {
     }
     pluginVerification {
         ides {
+            // `recommended()` automatically picks the JetBrains-recommended target IDEs
+            // for verification. As of writing, that's IC-243 (2024.3) and IC-251 (2025.1);
+            // newer IDEs are validated automatically once JetBrains adds them. Our
+            // pluginUntilBuild = 261.* allows install on 2026.1.x; the actual API surface
+            // we use is stable since 2024.3, so cross-version compatibility is expected.
             recommended()
         }
         // The 'com.example' id prefix is a placeholder; the marketplace-acceptable id is set in Plan 9.
