@@ -6,6 +6,7 @@ import com.example.ghactions.events.BoundRepo
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -142,6 +143,42 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
         val response = http.get("/repos/${repo.owner}/${repo.repo}/check-runs/${checkRunId.value}/annotations")
         if (!response.status.isSuccess()) fail(response, "annotations")
         response.body<List<com.example.ghactions.api.dto.AnnotationDto>>().map { it.toDomain() }
+    }
+
+    /**
+     * `POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel`. GitHub returns 202 / 204
+     * on success; 409 if the run is already terminal (cannot cancel).
+     */
+    suspend fun cancelRun(
+        repo: BoundRepo,
+        runId: com.example.ghactions.domain.RunId
+    ) = withContext(Dispatchers.IO) {
+        val response = http.post("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/cancel")
+        if (!response.status.isSuccess()) fail(response, "cancel run")
+    }
+
+    /**
+     * `POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun`. Re-runs every job in the run.
+     * GitHub returns 201 on success; 403 if the run is too old or already running.
+     */
+    suspend fun rerunRun(
+        repo: BoundRepo,
+        runId: com.example.ghactions.domain.RunId
+    ) = withContext(Dispatchers.IO) {
+        val response = http.post("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/rerun")
+        if (!response.status.isSuccess()) fail(response, "rerun run")
+    }
+
+    /**
+     * `POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs`. Re-runs only the
+     * jobs whose conclusion was non-success. Same status-code pattern as [rerunRun].
+     */
+    suspend fun rerunFailedJobs(
+        repo: BoundRepo,
+        runId: com.example.ghactions.domain.RunId
+    ) = withContext(Dispatchers.IO) {
+        val response = http.post("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/rerun-failed-jobs")
+        if (!response.status.isSuccess()) fail(response, "rerun failed jobs")
     }
 
     private suspend fun fail(response: HttpResponse, label: String): Nothing {
