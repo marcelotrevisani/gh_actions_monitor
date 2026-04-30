@@ -1,0 +1,70 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # IntelliJ-Platform downloads ~1.5GB of IDE binaries for build/runIde/verify.
+      # Cache them under .intellijPlatform/ to keep subsequent runs fast.
+      - name: Cache IntelliJ Platform binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/modules-2/files-2.1/com.jetbrains.intellij*
+            .intellijPlatform
+          key: ij-platform-${{ runner.os }}-${{ hashFiles('build.gradle.kts', 'gradle.properties') }}
+          restore-keys: ij-platform-${{ runner.os }}-
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon test
+
+      - name: Build plugin distribution
+        run: ./gradlew --no-daemon buildPlugin
+
+      - name: Verify plugin against target IDEs
+        run: ./gradlew --no-daemon verifyPlugin
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/
+            build/reports/pluginVerifier/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload built distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-distribution
+          path: build/distributions/*.zip
+          if-no-files-found: error
+          retention-days: 14
