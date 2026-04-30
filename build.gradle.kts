@@ -83,12 +83,15 @@ intellijPlatform {
     }
     pluginVerification {
         ides {
-            // `recommended()` automatically picks the JetBrains-recommended target IDEs
-            // for verification. As of writing, that's IC-243 (2024.3) and IC-251 (2025.1);
-            // newer IDEs are validated automatically once JetBrains adds them. Our
-            // pluginUntilBuild = 261.* allows install on 2026.1.x; the actual API surface
-            // we use is stable since 2024.3, so cross-version compatibility is expected.
-            recommended()
+            // Pinned to specific known-good versions. We previously used `recommended()`,
+            // but JetBrains' index can advertise an IDE version (e.g. IC-2026.1.1) before
+            // the actual artifact is published, breaking the verifier with "Could not
+            // find idea:ideaIC:…". Pinning bottoms out our verification at the lowest
+            // supported build (sinceBuild = 243) and the most recent we've confirmed works.
+            ide(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2024.3")
+            ide(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.1")
+            // pluginUntilBuild = 261.* lets the plugin install on 2026.1.x even though we
+            // can't verify against it here yet; the API surface is stable since 2024.3.
         }
         // The 'com.example' id prefix is a placeholder; the marketplace-acceptable id is set in Plan 9.
         // Until then, suppress the verifier's prefix check rather than blocking the build.
