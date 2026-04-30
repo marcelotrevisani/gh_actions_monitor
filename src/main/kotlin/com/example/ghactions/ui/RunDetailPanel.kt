@@ -265,6 +265,22 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         window.show()
     }
 
+    private fun handleResult(result: com.example.ghactions.repo.ActionResult, success: String) {
+        val app = com.intellij.openapi.application.ApplicationManager.getApplication()
+        when (result) {
+            is com.example.ghactions.repo.ActionResult.Success -> app.invokeLater {
+                com.intellij.openapi.ui.Messages.showInfoMessage(project, success, "GitHub Actions")
+            }
+            is com.example.ghactions.repo.ActionResult.Error -> app.invokeLater {
+                com.intellij.openapi.ui.Messages.showErrorDialog(
+                    project,
+                    com.example.ghactions.repo.friendlyApiError(result.httpStatus, result.message),
+                    "GitHub Actions"
+                )
+            }
+        }
+    }
+
     private fun buildTreeToolbar(): com.intellij.openapi.actionSystem.ActionToolbar {
         val group = com.intellij.openapi.actionSystem.DefaultActionGroup().apply {
             add(object : com.intellij.openapi.actionSystem.AnAction(
@@ -306,6 +322,74 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
                 }
                 override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
                     collapseAllJobs()
+                }
+            })
+            addSeparator()
+            add(object : com.intellij.openapi.actionSystem.AnAction(
+                "Cancel Run",
+                "Cancel the currently running workflow",
+                com.intellij.icons.AllIcons.Actions.Suspend
+            ) {
+                override fun getActionUpdateThread() = com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+                override fun update(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    val run = rootNode.userObject as? com.example.ghactions.domain.Run
+                    e.presentation.isEnabled = run != null
+                        && (run.status == com.example.ghactions.domain.RunStatus.IN_PROGRESS
+                            || run.status == com.example.ghactions.domain.RunStatus.QUEUED)
+                }
+                override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    val run = rootNode.userObject as? com.example.ghactions.domain.Run ?: return
+                    val ok = com.intellij.openapi.ui.Messages.showYesNoDialog(
+                        project,
+                        "Cancel run #${run.runNumber} (${run.workflowName})?",
+                        "Cancel run",
+                        com.intellij.openapi.ui.Messages.getQuestionIcon()
+                    )
+                    if (ok != com.intellij.openapi.ui.Messages.YES) return
+                    scope.launch {
+                        val result = repository.cancelRun(run.id)
+                        handleResult(result, success = "Cancellation requested.")
+                    }
+                }
+            })
+            add(object : com.intellij.openapi.actionSystem.AnAction(
+                "Re-run All Jobs",
+                "Re-run every job in this workflow run",
+                com.intellij.icons.AllIcons.Actions.Restart
+            ) {
+                override fun getActionUpdateThread() = com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+                override fun update(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    val run = rootNode.userObject as? com.example.ghactions.domain.Run
+                    e.presentation.isEnabled = run != null
+                        && run.status == com.example.ghactions.domain.RunStatus.COMPLETED
+                }
+                override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    val run = rootNode.userObject as? com.example.ghactions.domain.Run ?: return
+                    scope.launch {
+                        val result = repository.rerunRun(run.id)
+                        handleResult(result, success = "Re-run requested.")
+                    }
+                }
+            })
+            add(object : com.intellij.openapi.actionSystem.AnAction(
+                "Re-run Failed Jobs",
+                "Re-run only the jobs whose conclusion wasn't success",
+                com.intellij.icons.AllIcons.Actions.Rerun
+            ) {
+                override fun getActionUpdateThread() = com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+                override fun update(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    val run = rootNode.userObject as? com.example.ghactions.domain.Run
+                    e.presentation.isEnabled = run != null
+                        && run.status == com.example.ghactions.domain.RunStatus.COMPLETED
+                        && run.conclusion != null
+                        && run.conclusion != com.example.ghactions.domain.RunConclusion.SUCCESS
+                }
+                override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    val run = rootNode.userObject as? com.example.ghactions.domain.Run ?: return
+                    scope.launch {
+                        val result = repository.rerunFailedJobs(run.id)
+                        handleResult(result, success = "Re-run of failed jobs requested.")
+                    }
                 }
             })
         }
