@@ -59,17 +59,19 @@ class PullRequestRepositoryTest {
     }
 
     @Test
-    fun `refreshPullRequests joins each PR with the most recent matching run per workflow`() = runTest {
+    fun `refreshPullRequests fetches runs per PR branch and groups by workflow`() = runTest {
         val client = mockk<GitHubClient>(relaxed = true)
         val pr1 = aPr(1, branch = "feat/login")
         val pr2 = aPr(2, branch = "feat/cache")
         coEvery { client.listPullRequests(repo, PullRequestState.OPEN, any()) } returns listOf(pr1, pr2)
-        coEvery { client.listRunsForRepo(repo, any()) } returns listOf(
+        // Each PR's branch gets its own scoped fetch.
+        coEvery { client.listRunsForRepo(repo, any(), branch = "feat/login") } returns listOf(
             aRun(101, "feat/login", updatedSeconds = 100, workflowName = "CI"),
-            aRun(102, "feat/login", updatedSeconds = 200, workflowName = "CI"),     // newer CI — should win
-            aRun(105, "feat/login", updatedSeconds = 180, workflowName = "Lint"),    // separate workflow
-            aRun(103, "feat/cache", updatedSeconds = 150, workflowName = "CI"),
-            aRun(104, "main", updatedSeconds = 999, workflowName = "CI")             // unrelated — must be ignored
+            aRun(102, "feat/login", updatedSeconds = 200, workflowName = "CI"),  // newer CI — should win
+            aRun(105, "feat/login", updatedSeconds = 180, workflowName = "Lint")
+        )
+        coEvery { client.listRunsForRepo(repo, any(), branch = "feat/cache") } returns listOf(
+            aRun(103, "feat/cache", updatedSeconds = 150, workflowName = "CI")
         )
         val repository = PullRequestRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
 
@@ -90,7 +92,7 @@ class PullRequestRepositoryTest {
     fun `refreshPullRequests yields empty latestRuns when no run matches the PR's branch`() = runTest {
         val client = mockk<GitHubClient>(relaxed = true)
         coEvery { client.listPullRequests(repo, PullRequestState.OPEN, any()) } returns listOf(aPr(1, "feat/lonely"))
-        coEvery { client.listRunsForRepo(repo, any()) } returns listOf(aRun(101, "main", 100))
+        coEvery { client.listRunsForRepo(repo, any(), branch = "feat/lonely") } returns emptyList()
         val repository = PullRequestRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
 
         repository.refreshPullRequests(PullRequestState.OPEN)
@@ -100,6 +102,28 @@ class PullRequestRepositoryTest {
         assertEquals(1, state.entries.size)
         assertEquals(emptyList(), state.entries[0].latestRuns)
         assertNull(state.entries[0].latestRun)
+    }
+
+    @Test
+    fun `refreshPullRequests treats per-branch run fetch failures as empty for that PR`() = runTest {
+        val client = mockk<GitHubClient>(relaxed = true)
+        val pr1 = aPr(1, branch = "feat/works")
+        val pr2 = aPr(2, branch = "feat/broken")
+        coEvery { client.listPullRequests(repo, PullRequestState.OPEN, any()) } returns listOf(pr1, pr2)
+        coEvery { client.listRunsForRepo(repo, any(), branch = "feat/works") } returns listOf(
+            aRun(101, "feat/works", 100, "CI")
+        )
+        coEvery { client.listRunsForRepo(repo, any(), branch = "feat/broken") } throws
+            GitHubApiException(500, "boom")
+        val repository = PullRequestRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
+
+        repository.refreshPullRequests(PullRequestState.OPEN)
+
+        val state = repository.pullRequestsState.value
+        assertIs<PullRequestListState.Loaded>(state)
+        assertEquals(2, state.entries.size)
+        assertEquals(listOf(RunId(101)), state.entries[0].latestRuns.map { it.id })
+        assertEquals(emptyList(), state.entries[1].latestRuns)
     }
 
     @Test

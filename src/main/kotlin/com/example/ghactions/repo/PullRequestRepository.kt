@@ -14,7 +14,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job as CJob
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,8 +69,15 @@ class PullRequestRepository(
     val pullRequestsState: StateFlow<PullRequestListState> = _pullRequestsState.asStateFlow()
 
     /**
-     * Fetch PRs filtered by [state] plus the most recent runs for the bound repo, then
-     * for each PR pick the most recent run whose `head_branch` matches the PR's head ref.
+     * Fetch PRs filtered by [state], then for each PR fan out a per-branch run query so
+     * the matched runs reflect *that PR's branch* rather than the first page of the
+     * repo-wide run feed. The previous implementation pulled `?per_page=100` of runs once
+     * and grouped client-side, which silently dropped PR rows whose runs had been paged
+     * out by activity on `main` or other branches.
+     *
+     * The per-PR queries run in parallel via [coroutineScope] + [async]; failures on a
+     * single branch fall through to an empty run list for that PR rather than failing
+     * the whole refresh.
      */
     fun refreshPullRequests(state: PullRequestState, perPage: Int = 30): CJob = scope.launch {
         val repo = boundRepo() ?: return@launch
@@ -79,16 +89,25 @@ class PullRequestRepository(
         _pullRequestsState.value = PullRequestListState.Loading
         _pullRequestsState.value = try {
             val prs = client.listPullRequests(repo, state, perPage)
-            // Fetch enough runs that a PR with a recent commit will probably have at least
-            // one match; 100 is plenty for typical CI volumes.
-            val runs = client.listRunsForRepo(repo, perPage = 100)
-            val byBranch = runs.groupBy { it.headBranch }
-            val entries = prs.map { pr ->
-                val latestPerWorkflow = byBranch[pr.headRef].orEmpty()
-                    .groupBy { it.workflowName }
-                    .mapNotNull { (_, group) -> group.maxByOrNull { it.updatedAt } }
-                    .sortedByDescending { it.updatedAt }
-                PullRequestWithRun(pr, latestPerWorkflow)
+            val entries = coroutineScope {
+                prs.map { pr ->
+                    async {
+                        val runs = try {
+                            client.listRunsForRepo(repo, perPage = 30, branch = pr.headRef)
+                        } catch (e: GitHubApiException) {
+                            log.warn("listRunsForRepo(branch=${pr.headRef}) failed: status=${e.status}", e)
+                            emptyList()
+                        } catch (e: Throwable) {
+                            log.warn("listRunsForRepo(branch=${pr.headRef}) threw unexpectedly", e)
+                            emptyList()
+                        }
+                        val latestPerWorkflow = runs
+                            .groupBy { it.workflowName }
+                            .mapNotNull { (_, group) -> group.maxByOrNull { it.updatedAt } }
+                            .sortedByDescending { it.updatedAt }
+                        PullRequestWithRun(pr, latestPerWorkflow)
+                    }
+                }.awaitAll()
             }
             PullRequestListState.Loaded(entries)
         } catch (e: GitHubApiException) {

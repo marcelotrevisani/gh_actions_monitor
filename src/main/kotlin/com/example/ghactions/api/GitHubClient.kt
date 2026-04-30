@@ -22,12 +22,19 @@ import kotlinx.coroutines.withContext
 class GitHubClient(private val http: HttpClient) : AutoCloseable {
 
     /**
-     * `GET /repos/{owner}/{repo}/actions/runs?per_page=...`. Returns the most recent runs first.
-     * Caller is responsible for paging — Plan 2 only fetches the first page.
+     * `GET /repos/{owner}/{repo}/actions/runs?per_page=...&branch=...`. Returns the most recent
+     * runs first. When [branch] is non-null the response is filtered server-side to runs whose
+     * `head_branch` matches, which is essential for PR-row population on high-volume repos
+     * where a global page-1 fetch can miss older PR branches entirely.
      */
-    suspend fun listRunsForRepo(repo: BoundRepo, perPage: Int = 30): List<Run> = withContext(Dispatchers.IO) {
+    suspend fun listRunsForRepo(
+        repo: BoundRepo,
+        perPage: Int = 30,
+        branch: String? = null
+    ): List<Run> = withContext(Dispatchers.IO) {
         val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/runs") {
             parameter("per_page", perPage)
+            if (branch != null) parameter("branch", branch)
         }
         if (!response.status.isSuccess()) fail(response, "runs")
         response.body<ListRunsResponse>().workflowRuns.map { it.toDomain() }
