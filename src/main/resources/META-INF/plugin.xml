@@ -28,5 +28,8 @@
             icon="AllIcons.Vcs.Vendors.Github"
             factoryClass="com.example.ghactions.ui.GhActionsToolWindowFactory"/>
         <notificationGroup id="GitHub Actions Monitor" displayType="BALLOON"/>
+        <statusBarWidgetFactory
+            id="GhActionsStatusBarWidget"
+            implementation="com.example.ghactions.statusbar.GhActionsStatusBarWidgetFactory"/>
     </extensions>
 </idea-plugin>
