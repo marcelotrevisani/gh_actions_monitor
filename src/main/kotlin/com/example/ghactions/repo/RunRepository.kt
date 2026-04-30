@@ -373,6 +373,22 @@ class RunRepository(
     suspend fun rerunFailedJobs(runId: com.example.ghactions.domain.RunId): ActionResult =
         runAction(runId, "rerunFailedJobs") { client, repo -> client.rerunFailedJobs(repo, runId) }
 
+    suspend fun dispatchWorkflow(workflowId: com.example.ghactions.domain.WorkflowId, ref: String): ActionResult =
+        runAction(com.example.ghactions.domain.RunId(0), "dispatchWorkflow") { client, repo ->
+            client.dispatchWorkflow(repo, workflowId, ref)
+        }
+
+    suspend fun listWorkflows(): List<com.example.ghactions.domain.Workflow> {
+        val repo = boundRepo() ?: return emptyList()
+        val client = clientFactory() ?: return emptyList()
+        return try {
+            client.listWorkflows(repo)
+        } catch (e: Throwable) {
+            log.warn("listWorkflows failed", e)
+            emptyList()
+        }
+    }
+
     private suspend fun runAction(
         runId: com.example.ghactions.domain.RunId,
         label: String,
