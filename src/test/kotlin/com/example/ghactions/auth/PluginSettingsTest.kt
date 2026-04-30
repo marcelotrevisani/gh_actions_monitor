@@ -11,7 +11,6 @@ class PluginSettingsTest : BasePlatformTestCase() {
         assertNull(s.state.preferredAccountId)
         assertTrue(s.state.livePollingEnabled)
         assertEquals("FAILURES_ONLY", s.state.notificationLevel)
-        assertEquals("PR_CENTRIC", s.state.viewMode)
     }
 
     fun testRoundTrip() {
@@ -21,7 +20,6 @@ class PluginSettingsTest : BasePlatformTestCase() {
             preferredAccountId = "acct-7"
             livePollingEnabled = false
             notificationLevel = "OFF"
-            viewMode = "TREE"
             defaultDownloadDir = "/tmp/dl"
         }
 
@@ -33,7 +31,6 @@ class PluginSettingsTest : BasePlatformTestCase() {
         assertEquals("acct-7", restored.state.preferredAccountId)
         assertFalse(restored.state.livePollingEnabled)
         assertEquals("OFF", restored.state.notificationLevel)
-        assertEquals("TREE", restored.state.viewMode)
         assertEquals("/tmp/dl", restored.state.defaultDownloadDir)
     }
 

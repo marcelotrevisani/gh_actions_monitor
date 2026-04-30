@@ -60,7 +60,6 @@ class GhActionsSettingsPanel {
 
     // Segmented button references for manual reset
     private var notificationLevelButton: SegmentedButton<String>? = null
-    private var viewModeButton: SegmentedButton<String>? = null
 
     init {
         refreshAuthStatus()
@@ -111,13 +110,6 @@ class GhActionsSettingsPanel {
                         btn.whenItemSelectedFromUi(null) { state.notificationLevel = it }
                     }
             }
-            row("Default view mode:") {
-                viewModeButton = segmentedButton(listOf("PR_CENTRIC", "TABBED", "TREE")) { text = it }
-                    .apply { selectedItem = state.viewMode }
-                    .also { btn ->
-                        btn.whenItemSelectedFromUi(null) { state.viewMode = it }
-                    }
-            }
             row("Default download directory:") {
                 val tf: Cell<JBTextField> = textField()
                 tf.columns(40)
@@ -130,9 +122,7 @@ class GhActionsSettingsPanel {
         val saved = PluginSettings.getInstance().state
         // Sync the combo selection into [state] before comparing.
         state.preferredAccountId = (accountCombo.selectedItem as? AccountChoice)?.id
-        // Sync segmented button selections into state before comparing
         notificationLevelButton?.selectedItem?.let { state.notificationLevel = it }
-        viewModeButton?.selectedItem?.let { state.viewMode = it }
         if (state != saved) return true
         if (pendingTokenChanged()) return true
         return false
@@ -140,9 +130,7 @@ class GhActionsSettingsPanel {
 
     fun apply() {
         state.preferredAccountId = (accountCombo.selectedItem as? AccountChoice)?.id
-        // Sync segmented button selections into state before persisting
         notificationLevelButton?.selectedItem?.let { state.notificationLevel = it }
-        viewModeButton?.selectedItem?.let { state.viewMode = it }
         ApplicationManager.getApplication().runWriteAction {
             PluginSettings.getInstance().loadState(state.copy())
         }
@@ -162,13 +150,11 @@ class GhActionsSettingsPanel {
         state.preferredAccountId = saved.preferredAccountId
         state.livePollingEnabled = saved.livePollingEnabled
         state.notificationLevel = saved.notificationLevel
-        state.viewMode = saved.viewMode
         state.defaultDownloadDir = saved.defaultDownloadDir
 
         accountCombo.selectedIndex = accountChoices.indexOfFirst { it.id == state.preferredAccountId }
             .takeIf { it >= 0 } ?: 0
         notificationLevelButton?.selectedItem = state.notificationLevel
-        viewModeButton?.selectedItem = state.viewMode
         tokenField.text = ""
         pendingToken = null
         statusLabel.text = " "

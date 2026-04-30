@@ -20,7 +20,6 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
         var preferredAccountId: String? = null,
         var livePollingEnabled: Boolean = true,
         var notificationLevel: String = "FAILURES_ONLY",
-        var viewMode: String = "PR_CENTRIC",
         var defaultDownloadDir: String? = null
     )
 
