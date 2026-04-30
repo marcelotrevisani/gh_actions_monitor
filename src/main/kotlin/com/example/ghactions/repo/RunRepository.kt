@@ -234,16 +234,12 @@ class RunRepository(
             val jobs = client.listJobs(repo, runId)
             log.info("refreshSummary(run=${runId.value}): ${jobs.size} job(s)")
             val sections = jobs.map { job ->
-                // Try the undocumented summary_raw endpoint first — it's the authoritative
-                // source for `$GITHUB_STEP_SUMMARY` content (the REST check-run output
-                // doesn't always carry it). Path uses *plural* /jobs/ — different URL
-                // space than the API's job.html_url field (which is /job/ singular).
-                val raw = try {
-                    client.getStepSummaryRaw(repo, runId, job.id)
-                } catch (e: Throwable) {
-                    log.warn("getStepSummaryRaw(job=${job.id.value}) failed", e)
-                    null
-                }
+                // Best-effort: the undocumented summary_raw web endpoint usually 404s
+                // with a PAT (different auth path than api.github.com). When it does
+                // succeed, we get the canonical `$GITHUB_STEP_SUMMARY` markdown. When
+                // it doesn't, SummaryPanel falls back to the check-run output and the
+                // 'Open Summary on GitHub' link. See [GitHubClient.getStepSummaryRaw].
+                val raw = client.getStepSummaryRaw(repo, runId, job.id)
                 // Always fetch the check-run output too if available — gives us the
                 // headline title even when the raw summary is empty.
                 val output = job.checkRunId?.let { crid ->

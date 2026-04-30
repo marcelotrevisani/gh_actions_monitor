@@ -95,7 +95,12 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
                 val hasContent = state.sections.any { hasAnyContent(it) }
                 val link = githubLinkHtml()
                 if (state.sections.isEmpty()) {
-                    emptyMessageHtml("No jobs with summary content for this run.") + link
+                    emptyMessageHtml(
+                        "No content available from the API. The run may have step summaries " +
+                            "(\$GITHUB_STEP_SUMMARY) — those live behind a session-cookie-only " +
+                            "endpoint that the plugin's PAT can't reach. Use the link below " +
+                            "to view them on github.com."
+                    ) + link
                 } else if (!hasContent) {
                     sectionsHtml + link
                 } else {

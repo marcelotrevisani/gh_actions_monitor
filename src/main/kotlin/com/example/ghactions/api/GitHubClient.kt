@@ -149,19 +149,21 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     }
 
     /**
-     * `GET https://github.com/{owner}/{repo}/actions/runs/{run_id}/jobs/{job_id}/summary_raw`.
+     * Best-effort fetch of `$GITHUB_STEP_SUMMARY` content from the undocumented web
+     * endpoint `https://github.com/{o}/{r}/actions/runs/{run_id}/jobs/{job_id}/summary_raw`.
      *
-     * Undocumented endpoint on the *web* host (not `api.github.com`) that returns the raw
-     * markdown a job's steps wrote to `$GITHUB_STEP_SUMMARY`. The REST check-run output
-     * fields don't always carry this content, so the web URL is the only stable path to
-     * the summary the GitHub UI displays.
+     * **This usually returns 404 with a PAT.** The endpoint is on the github.com *web*
+     * host, not `api.github.com`. The web host gates many URLs on session cookies, not
+     * PATs — a 404 with a `text/html` body is GitHub's standard "not authorised" response
+     * (same page the browser shows for any private URL when not logged in). The reason
+     * `ipdxco/job-summary-url-action` can use this URL is it runs inside GitHub Actions
+     * with `GITHUB_TOKEN`, an OAuth-shaped token the web host accepts.
      *
-     * Note: the path uses **plural `/jobs/`** even though the REST API's `job.html_url`
-     * field uses singular `/job/`. They're different URL spaces — the singular path is
-     * the user-facing job page, the plural path is the raw-fetch endpoint.
+     * We try anyway (it's free) — if your IDE happens to be authenticated with a token
+     * the web host honours, the markdown comes through and `SummaryPanel` renders it.
+     * Otherwise the panel shows the *Open Summary on GitHub* link as the workaround.
      *
-     * Auth: the same `Authorization: token <PAT>` header works on github.com as on the API
-     * for this URL. Returns null on 404 (job has no step summary). Throws for other errors.
+     * Returns null on any failure (including 404). Doesn't throw.
      */
     suspend fun getStepSummaryRaw(
         repo: BoundRepo,
@@ -170,23 +172,20 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     ): String? = withContext(Dispatchers.IO) {
         val webHost = repo.webBaseUrl()
         val url = "$webHost/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/jobs/${jobId.value}/summary_raw"
-        // The web host doesn't speak `application/vnd.github+json` (the API media type our
-        // defaultRequest sets); reset Accept to `text/plain, */*` so the server returns
-        // raw markdown instead of a JSON error or HTML fallback.
-        val response = http.get(url) {
-            headers.remove(io.ktor.http.HttpHeaders.Accept)
-            headers.append(io.ktor.http.HttpHeaders.Accept, "text/plain, text/markdown, */*")
+        // The web host doesn't speak `application/vnd.github+json`; reset Accept so the
+        // server returns raw markdown instead of a JSON error.
+        val response = try {
+            http.get(url) {
+                headers.remove(io.ktor.http.HttpHeaders.Accept)
+                headers.append(io.ktor.http.HttpHeaders.Accept, "text/plain, text/markdown, */*")
+            }
+        } catch (t: Throwable) {
+            return@withContext null
         }
-        val body = response.bodyAsText()
-        com.intellij.openapi.diagnostic.Logger.getInstance(GitHubClient::class.java).info(
-            "getStepSummaryRaw: GET $url -> status=${response.status.value} " +
-                "content-type=${response.headers[io.ktor.http.HttpHeaders.ContentType]} " +
-                "len=${body.length} " +
-                "first80='${body.take(80).replace('\n', ' ').replace('\r', ' ')}'"
-        )
-        if (response.status.value == 404) return@withContext null
-        if (!response.status.isSuccess()) fail(response, "step summary")
-        body
+        // A 404 with text/html body is GitHub's "not authorised" page; treat as null.
+        val ct = response.headers[io.ktor.http.HttpHeaders.ContentType].orEmpty()
+        if (!response.status.isSuccess() || ct.startsWith("text/html")) return@withContext null
+        response.bodyAsText().takeIf { it.isNotBlank() }
     }
 
     /**
