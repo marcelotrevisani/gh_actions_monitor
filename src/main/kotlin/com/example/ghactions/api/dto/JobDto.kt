@@ -33,7 +33,8 @@ data class JobDto(
         startedAt = startedAt?.let(Instant::parse),
         completedAt = completedAt?.let(Instant::parse),
         htmlUrl = htmlUrl,
-        steps = steps.map { it.toDomain() }
+        steps = steps.map { it.toDomain() },
+        checkRunId = checkRunId()
     )
 }
 

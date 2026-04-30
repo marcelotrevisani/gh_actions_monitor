@@ -61,6 +61,17 @@ sealed class DownloadResult {
     data class Error(val httpStatus: Int?, val message: String) : DownloadResult()
 }
 
+/** State of the aggregated check-run summaries for a run. */
+sealed class SummaryState {
+    data object Idle : SummaryState()
+    data object Loading : SummaryState()
+    data class Loaded(val sections: List<Section>) : SummaryState()
+    data class Error(val httpStatus: Int?, val message: String) : SummaryState()
+
+    /** One section per job that has a check-run; ordered as the jobs were returned. */
+    data class Section(val jobName: String, val output: com.example.ghactions.domain.CheckRunOutput)
+}
+
 /**
  * Project-scoped state cache. Single source of truth for run, job, and log data.
  * Never throws — errors land in the appropriate StateFlow's [Error] variant.
@@ -110,6 +121,13 @@ class RunRepository(
 
     private fun artifactsFlow(runId: com.example.ghactions.domain.RunId): MutableStateFlow<ArtifactsState> =
         _artifactsByRun.computeIfAbsent(runId) { MutableStateFlow(ArtifactsState.Idle) }
+
+    private val _summariesByRun = ConcurrentHashMap<com.example.ghactions.domain.RunId, MutableStateFlow<SummaryState>>()
+    fun summaryState(runId: com.example.ghactions.domain.RunId): StateFlow<SummaryState> =
+        _summariesByRun.computeIfAbsent(runId) { MutableStateFlow(SummaryState.Idle) }.asStateFlow()
+
+    private fun summaryFlow(runId: com.example.ghactions.domain.RunId): MutableStateFlow<SummaryState> =
+        _summariesByRun.computeIfAbsent(runId) { MutableStateFlow(SummaryState.Idle) }
 
     /** Cached run-logs zips keyed by run id. Cleared by [invalidateAll]. */
     private val _archivesByRun = ConcurrentHashMap<RunId, RunLogsArchive>()
@@ -166,6 +184,31 @@ class RunRepository(
         } catch (e: Throwable) {
             log.warn("listArtifacts threw unexpectedly", e)
             ArtifactsState.Error(null, e.message ?: e::class.java.simpleName)
+        }
+    }
+
+    fun refreshSummary(runId: com.example.ghactions.domain.RunId): CJob = scope.launch {
+        val repo = boundRepo() ?: return@launch
+        val client = clientFactory() ?: run {
+            summaryFlow(runId).value =
+                SummaryState.Error(null, "No credentials available for ${repo.host}")
+            return@launch
+        }
+        summaryFlow(runId).value = SummaryState.Loading
+        summaryFlow(runId).value = try {
+            val jobs = client.listJobs(repo, runId)
+            val sections = jobs.mapNotNull { job ->
+                val crid = job.checkRunId ?: return@mapNotNull null
+                val output = client.getCheckRun(repo, crid)
+                SummaryState.Section(job.name, output)
+            }
+            SummaryState.Loaded(sections)
+        } catch (e: com.example.ghactions.api.GitHubApiException) {
+            log.warn("refreshSummary failed: status=${e.status}", e)
+            SummaryState.Error(e.status, e.message ?: "API error")
+        } catch (e: Throwable) {
+            log.warn("refreshSummary threw unexpectedly", e)
+            SummaryState.Error(null, e.message ?: e::class.java.simpleName)
         }
     }
 
@@ -280,6 +323,7 @@ class RunRepository(
         _logsByJob.values.forEach { it.value = LogState.Idle }
         _stepLogs.values.forEach { it.value = LogState.Idle }
         _artifactsByRun.values.forEach { it.value = ArtifactsState.Idle }
+        _summariesByRun.values.forEach { it.value = SummaryState.Idle }
         _archivesByRun.clear()
     }
 

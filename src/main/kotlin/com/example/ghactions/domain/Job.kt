@@ -11,5 +11,6 @@ data class Job(
     val startedAt: Instant?,
     val completedAt: Instant?,
     val htmlUrl: String,
-    val steps: List<Step>
+    val steps: List<Step>,
+    val checkRunId: CheckRunId? = null
 )
