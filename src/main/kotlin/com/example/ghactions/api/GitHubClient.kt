@@ -8,6 +8,9 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.parameter
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
@@ -179,6 +182,24 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     ) = withContext(Dispatchers.IO) {
         val response = http.post("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/rerun-failed-jobs")
         if (!response.status.isSuccess()) fail(response, "rerun failed jobs")
+    }
+
+    suspend fun listWorkflows(repo: BoundRepo): List<com.example.ghactions.domain.Workflow> = withContext(Dispatchers.IO) {
+        val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/workflows")
+        if (!response.status.isSuccess()) fail(response, "workflows")
+        response.body<com.example.ghactions.api.dto.ListWorkflowsResponse>().workflows.map { it.toDomain() }
+    }
+
+    suspend fun dispatchWorkflow(
+        repo: BoundRepo,
+        workflowId: com.example.ghactions.domain.WorkflowId,
+        ref: String
+    ) = withContext(Dispatchers.IO) {
+        val response = http.post("/repos/${repo.owner}/${repo.repo}/actions/workflows/${workflowId.value}/dispatches") {
+            contentType(ContentType.Application.Json)
+            setBody(com.example.ghactions.api.dto.DispatchRequest(ref = ref))
+        }
+        if (!response.status.isSuccess()) fail(response, "dispatch workflow")
     }
 
     private suspend fun fail(response: HttpResponse, label: String): Nothing {
