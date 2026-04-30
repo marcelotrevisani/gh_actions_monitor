@@ -90,6 +90,35 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
         response.body<List<com.example.ghactions.api.dto.PullRequestDto>>().map { it.toDomain() }
     }
 
+    /**
+     * `GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts`. Returns the run's
+     * artifacts. Expired artifacts are still listed (with `expired = true`) but their
+     * download endpoint returns 410.
+     */
+    suspend fun listArtifacts(
+        repo: BoundRepo,
+        runId: com.example.ghactions.domain.RunId
+    ): List<com.example.ghactions.domain.Artifact> = withContext(Dispatchers.IO) {
+        val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/artifacts")
+        if (!response.status.isSuccess()) fail(response, "artifacts")
+        response.body<com.example.ghactions.api.dto.ListArtifactsResponse>().artifacts.map { it.toDomain() }
+    }
+
+    /**
+     * `GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip`. Returns the zip
+     * bytes (Ktor follows the GitHub redirect to the signed URL transparently).
+     *
+     * Throws [GitHubApiException] with status 410 when the artifact has expired.
+     */
+    suspend fun downloadArtifact(
+        repo: BoundRepo,
+        artifactId: com.example.ghactions.domain.ArtifactId
+    ): ByteArray = withContext(Dispatchers.IO) {
+        val response = http.get("/repos/${repo.owner}/${repo.repo}/actions/artifacts/${artifactId.value}/zip")
+        if (!response.status.isSuccess()) fail(response, "artifact zip")
+        response.body<ByteArray>()
+    }
+
     private suspend fun fail(response: HttpResponse, label: String): Nothing {
         val body = response.bodyAsText()
         val info = RateLimitInfo.fromHeaders(response.headers)
