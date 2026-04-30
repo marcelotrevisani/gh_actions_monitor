@@ -126,7 +126,7 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         "#%02x%02x%02x".format(c.red, c.green, c.blue)
 
     private fun codeBg(): String =
-        if (UIUtil.isUnderDarcula()) "#2b2b2b" else "#f4f4f4"
+        if (!com.intellij.ui.JBColor.isBright()) "#2b2b2b" else "#f4f4f4"
 
     private fun emptyMessageHtml(text: String): String =
         """<div style="text-align:center; color:#888; padding:32px;">${escape(text)}</div>"""
