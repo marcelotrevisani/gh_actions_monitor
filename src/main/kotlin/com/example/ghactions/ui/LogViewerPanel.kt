@@ -1,5 +1,7 @@
 package com.example.ghactions.ui
 
+import com.example.ghactions.ui.ansi.AnsiParser
+import com.example.ghactions.ui.ansi.AnsiTextPane
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
@@ -8,25 +10,18 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
 import java.awt.FlowLayout
-import java.awt.Font
 import javax.swing.JPanel
-import javax.swing.JTextArea
 
 /**
- * Read-only viewer for log text. Plan 3: no section parsing — the [RunRepository] now
- * hands us pre-extracted per-step text via the run-logs zip archive, so [setText] just
- * renders it. The only header control is the *Show timestamps* toggle.
- *
- * (ANSI color rendering is Plan 5.)
+ * Read-only viewer for log text. Plan 7: ANSI escape codes in the input are parsed and
+ * rendered with foreground color + bold via [AnsiTextPane]. Plan 3's per-step zip extraction
+ * still feeds [setText]; this panel doesn't parse run structure.
  */
 class LogViewerPanel : JPanel(BorderLayout()) {
 
     private var rawText: String = ""
 
-    private val textArea = JTextArea().apply {
-        isEditable = false
-        lineWrap = false
-        font = Font(Font.MONOSPACED, Font.PLAIN, 12)
+    private val textPane = AnsiTextPane().apply {
         margin = JBUI.insets(4, 8)
     }
 
@@ -44,7 +39,7 @@ class LogViewerPanel : JPanel(BorderLayout()) {
         add(statusLabel)
     }
 
-    private val scrollPane = JBScrollPane(textArea).apply {
+    private val scrollPane = JBScrollPane(textPane).apply {
         border = JBUI.Borders.empty()
     }
 
@@ -78,8 +73,7 @@ class LogViewerPanel : JPanel(BorderLayout()) {
             } else {
                 rawText.lineSequence().joinToString("\n") { stripTimestamp(it) }
             }
-            textArea.text = visible
-            textArea.caretPosition = 0
+            textPane.setSpans(AnsiParser.parse(visible))
         }
     }
 
