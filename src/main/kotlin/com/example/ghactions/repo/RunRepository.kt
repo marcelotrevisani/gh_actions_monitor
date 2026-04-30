@@ -47,6 +47,20 @@ sealed class LogState {
     data class Error(val httpStatus: Int?, val message: String) : LogState()
 }
 
+/** State of the artifacts list for one specific run. */
+sealed class ArtifactsState {
+    data object Idle : ArtifactsState()
+    data object Loading : ArtifactsState()
+    data class Loaded(val artifacts: List<com.example.ghactions.domain.Artifact>) : ArtifactsState()
+    data class Error(val httpStatus: Int?, val message: String) : ArtifactsState()
+}
+
+/** Outcome of [RunRepository.downloadArtifactToFile]. */
+sealed class DownloadResult {
+    data class Success(val file: java.io.File) : DownloadResult()
+    data class Error(val httpStatus: Int?, val message: String) : DownloadResult()
+}
+
 /**
  * Project-scoped state cache. Single source of truth for run, job, and log data.
  * Never throws — errors land in the appropriate StateFlow's [Error] variant.
@@ -90,6 +104,13 @@ class RunRepository(
     fun logsState(jobId: JobId, stepNumber: Int): StateFlow<LogState> =
         _stepLogs.computeIfAbsent(jobId to stepNumber) { MutableStateFlow(LogState.Idle) }.asStateFlow()
 
+    private val _artifactsByRun = ConcurrentHashMap<com.example.ghactions.domain.RunId, MutableStateFlow<ArtifactsState>>()
+    fun artifactsState(runId: com.example.ghactions.domain.RunId): StateFlow<ArtifactsState> =
+        _artifactsByRun.computeIfAbsent(runId) { MutableStateFlow(ArtifactsState.Idle) }.asStateFlow()
+
+    private fun artifactsFlow(runId: com.example.ghactions.domain.RunId): MutableStateFlow<ArtifactsState> =
+        _artifactsByRun.computeIfAbsent(runId) { MutableStateFlow(ArtifactsState.Idle) }
+
     /** Cached run-logs zips keyed by run id. Cleared by [invalidateAll]. */
     private val _archivesByRun = ConcurrentHashMap<RunId, RunLogsArchive>()
 
@@ -126,6 +147,44 @@ class RunRepository(
         } catch (e: Throwable) {
             log.warn("listJobs threw unexpectedly", e)
             JobsState.Error(null, e.message ?: e::class.java.simpleName)
+        }
+    }
+
+    fun refreshArtifacts(runId: com.example.ghactions.domain.RunId): CJob = scope.launch {
+        val repo = boundRepo() ?: return@launch
+        val client = clientFactory() ?: run {
+            artifactsFlow(runId).value =
+                ArtifactsState.Error(null, "No credentials available for ${repo.host}")
+            return@launch
+        }
+        artifactsFlow(runId).value = ArtifactsState.Loading
+        artifactsFlow(runId).value = try {
+            ArtifactsState.Loaded(client.listArtifacts(repo, runId))
+        } catch (e: com.example.ghactions.api.GitHubApiException) {
+            log.warn("listArtifacts failed: status=${e.status}", e)
+            ArtifactsState.Error(e.status, e.message ?: "API error")
+        } catch (e: Throwable) {
+            log.warn("listArtifacts threw unexpectedly", e)
+            ArtifactsState.Error(null, e.message ?: e::class.java.simpleName)
+        }
+    }
+
+    suspend fun downloadArtifactToFile(
+        artifactId: com.example.ghactions.domain.ArtifactId,
+        target: java.io.File
+    ): DownloadResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val repo = boundRepo() ?: return@withContext DownloadResult.Error(null, "No bound repo")
+        val client = clientFactory() ?: return@withContext DownloadResult.Error(null, "No credentials available for ${repo.host}")
+        try {
+            val bytes = client.downloadArtifact(repo, artifactId)
+            target.writeBytes(bytes)
+            DownloadResult.Success(target)
+        } catch (e: com.example.ghactions.api.GitHubApiException) {
+            log.warn("downloadArtifact failed: status=${e.status}", e)
+            DownloadResult.Error(e.status, e.message ?: "API error")
+        } catch (e: Throwable) {
+            log.warn("downloadArtifact threw unexpectedly", e)
+            DownloadResult.Error(null, e.message ?: e::class.java.simpleName)
         }
     }
 
@@ -220,6 +279,7 @@ class RunRepository(
         _jobsByRun.values.forEach { it.value = JobsState.Idle }
         _logsByJob.values.forEach { it.value = LogState.Idle }
         _stepLogs.values.forEach { it.value = LogState.Idle }
+        _artifactsByRun.values.forEach { it.value = ArtifactsState.Idle }
         _archivesByRun.clear()
     }
 
