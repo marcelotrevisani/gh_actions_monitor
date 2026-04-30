@@ -68,13 +68,38 @@ class LogViewerPanel : JPanel(BorderLayout()) {
 
     private fun renderText() {
         ApplicationManager.getApplication().invokeLater {
-            val visible = if (timestampToggle.isSelected) {
+            val withoutTimestamps = if (timestampToggle.isSelected) {
                 rawText
             } else {
                 rawText.lineSequence().joinToString("\n") { stripTimestamp(it) }
             }
-            textPane.setSpans(AnsiParser.parse(visible))
+            // Pre-pass: swap workflow command markers (::error / ##[error] / etc.) for a
+            // colour-coded "[ERROR file:line] message" rendition. Lines that don't match
+            // pass through unchanged for the AnsiParser to handle.
+            val withMarkers = withoutTimestamps.lineSequence().joinToString("\n") { line ->
+                val cmd = com.example.ghactions.ui.ansi.WorkflowCommandParser.parseLine(line)
+                    ?: return@joinToString line
+                formatMarkerLine(cmd)
+            }
+            textPane.setSpans(AnsiParser.parse(withMarkers))
         }
+    }
+
+    private fun formatMarkerLine(cmd: com.example.ghactions.ui.ansi.WorkflowCommand): String {
+        val tag = when (cmd.level) {
+            com.example.ghactions.ui.ansi.CommandLevel.ERROR -> "ERROR"
+            com.example.ghactions.ui.ansi.CommandLevel.WARNING -> "WARNING"
+            com.example.ghactions.ui.ansi.CommandLevel.NOTICE -> "NOTICE"
+        }
+        val ansiOpen = when (cmd.level) {
+            com.example.ghactions.ui.ansi.CommandLevel.ERROR -> "[1;31m"   // bold red
+            com.example.ghactions.ui.ansi.CommandLevel.WARNING -> "[1;33m" // bold yellow
+            com.example.ghactions.ui.ansi.CommandLevel.NOTICE -> "[1;36m"  // bold cyan
+        }
+        val ansiClose = "[0m"
+        val location = listOfNotNull(cmd.file, cmd.line?.toString()).joinToString(":")
+        val prefix = if (location.isEmpty()) "[$tag]" else "[$tag $location]"
+        return "$ansiOpen$prefix $ansiClose${cmd.message}"
     }
 
     private fun stripTimestamp(line: String): String =
