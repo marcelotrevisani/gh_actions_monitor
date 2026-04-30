@@ -23,3 +23,6 @@ Thumbs.db
 # Local secrets — never commit
 local.properties
 *.local.kts
+
+# Claude Code session state
+.claude/
