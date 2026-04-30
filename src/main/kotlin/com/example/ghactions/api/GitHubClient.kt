@@ -170,10 +170,23 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     ): String? = withContext(Dispatchers.IO) {
         val webHost = repo.webBaseUrl()
         val url = "$webHost/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/jobs/${jobId.value}/summary_raw"
-        val response = http.get(url)
+        // The web host doesn't speak `application/vnd.github+json` (the API media type our
+        // defaultRequest sets); reset Accept to `text/plain, */*` so the server returns
+        // raw markdown instead of a JSON error or HTML fallback.
+        val response = http.get(url) {
+            headers.remove(io.ktor.http.HttpHeaders.Accept)
+            headers.append(io.ktor.http.HttpHeaders.Accept, "text/plain, text/markdown, */*")
+        }
+        val body = response.bodyAsText()
+        com.intellij.openapi.diagnostic.Logger.getInstance(GitHubClient::class.java).info(
+            "getStepSummaryRaw: GET $url -> status=${response.status.value} " +
+                "content-type=${response.headers[io.ktor.http.HttpHeaders.ContentType]} " +
+                "len=${body.length} " +
+                "first80='${body.take(80).replace('\n', ' ').replace('\r', ' ')}'"
+        )
         if (response.status.value == 404) return@withContext null
         if (!response.status.isSuccess()) fail(response, "step summary")
-        response.bodyAsText()
+        body
     }
 
     /**
