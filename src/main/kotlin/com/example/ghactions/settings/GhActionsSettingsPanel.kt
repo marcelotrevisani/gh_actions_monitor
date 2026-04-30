@@ -55,6 +55,18 @@ class GhActionsSettingsPanel : Disposable {
     private val accountCombo: JComboBox<AccountChoice> = JComboBox(DefaultComboBoxModel(accountChoices.toTypedArray())).apply {
         selectedIndex = accountChoices.indexOfFirst { it.id == state.preferredAccountId }
             .takeIf { it >= 0 } ?: 0
+        // Refresh just before the dropdown opens — the user may have added an IDE
+        // account through Settings → Version Control → GitHub since this panel was
+        // last rendered, and the StateFlow subscription doesn't always catch
+        // mid-Settings-dialog updates (the Configurable isn't recreated on tab
+        // navigation, only on dialog open).
+        addPopupMenuListener(object : javax.swing.event.PopupMenuListener {
+            override fun popupMenuWillBecomeVisible(e: javax.swing.event.PopupMenuEvent) {
+                rebuildAccountCombo(ideAccountSource.listAccounts())
+            }
+            override fun popupMenuWillBecomeInvisible(e: javax.swing.event.PopupMenuEvent) {}
+            override fun popupMenuCanceled(e: javax.swing.event.PopupMenuEvent) {}
+        })
     }
 
     // Segmented button references for manual reset
