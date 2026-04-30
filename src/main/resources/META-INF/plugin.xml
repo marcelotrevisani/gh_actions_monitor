@@ -6,6 +6,7 @@
         Monitor and act on GitHub Actions for your project's repo without leaving the IDE.
         <br/>Authenticate via PAT or your IDE-configured GitHub account.
         <br/>Supports github.com and GitHub Enterprise Server.
+        <br/><br/>Licensed under the Apache License 2.0.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
