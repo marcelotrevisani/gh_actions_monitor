@@ -42,6 +42,9 @@ class GhActionsToolWindowFactory : ToolWindowFactory {
         coordinator.setToolWindowVisible(toolWindow.isVisible)
         coordinator.start()
 
+        val notifications = project.getService(com.example.ghactions.notifications.NotificationCenter::class.java)
+        notifications.start()
+
         val listenerBus = project.messageBus.connect(toolWindow.disposable)
         listenerBus.subscribe(
             com.intellij.openapi.wm.ex.ToolWindowManagerListener.TOPIC,
