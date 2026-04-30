@@ -80,6 +80,7 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
 
     private val splitter = OnePixelSplitter(true, 0.4f).apply {
         firstComponent = JPanel(BorderLayout()).apply {
+            add(buildTreeToolbar().component, BorderLayout.NORTH)
             add(JBScrollPane(tree), BorderLayout.CENTER)
         }
         secondComponent = detailTabs
@@ -91,6 +92,16 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
     init {
         border = JBUI.Borders.empty()
         add(splitter, BorderLayout.CENTER)
+        tree.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                if (e.clickCount == 2 && javax.swing.SwingUtilities.isLeftMouseButton(e)) {
+                    val path = tree.getPathForLocation(e.x, e.y) ?: return
+                    tree.selectionPath = path
+                    openSelectionInNewWindow()
+                    e.consume()
+                }
+            }
+        })
     }
 
     fun showRun(run: Run) {
@@ -172,6 +183,77 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         for (i in 0 until rootNode.childCount) {
             tree.expandPath(TreePath((rootNode.getChildAt(i) as DefaultMutableTreeNode).path))
         }
+    }
+
+    private fun openSelectionInNewWindow() {
+        val node = tree.lastSelectedPathComponent as? javax.swing.tree.DefaultMutableTreeNode ?: return
+        val payload = node.userObject
+        val run = rootNode.userObject as? com.example.ghactions.domain.Run ?: return
+        when (payload) {
+            is com.example.ghactions.domain.Job -> openJobInNewWindow(run, payload)
+            is com.example.ghactions.domain.Step -> {
+                val parentJob = (node.parent as? javax.swing.tree.DefaultMutableTreeNode)?.userObject
+                    as? com.example.ghactions.domain.Job ?: return
+                openStepInNewWindow(run, parentJob, payload)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun openJobInNewWindow(run: com.example.ghactions.domain.Run, job: com.example.ghactions.domain.Job) {
+        repository.refreshLogs(job.id)
+        val window = LogWindow(
+            project = project,
+            windowTitle = "${run.workflowName} · ${job.name} (run #${run.id})",
+            statusHint = "Job · ${job.name}",
+            source = repository.logsState(job.id)
+        )
+        window.show()
+    }
+
+    private fun openStepInNewWindow(
+        run: com.example.ghactions.domain.Run,
+        job: com.example.ghactions.domain.Job,
+        step: com.example.ghactions.domain.Step
+    ) {
+        repository.refreshStepLog(
+            runId = run.id,
+            jobId = job.id,
+            jobName = job.name,
+            stepNumber = step.number,
+            stepName = step.name
+        )
+        val window = LogWindow(
+            project = project,
+            windowTitle = "${run.workflowName} · ${job.name} · ${step.name} (run #${run.id})",
+            statusHint = "Step ${step.number} · ${step.name}",
+            source = repository.logsState(job.id, stepNumber = step.number)
+        )
+        window.show()
+    }
+
+    private fun buildTreeToolbar(): com.intellij.openapi.actionSystem.ActionToolbar {
+        val group = com.intellij.openapi.actionSystem.DefaultActionGroup().apply {
+            add(object : com.intellij.openapi.actionSystem.AnAction(
+                "Open in New Window",
+                "Pop the selected job's or step's log into a separate window",
+                com.intellij.icons.AllIcons.Actions.MoveToWindow
+            ) {
+                override fun getActionUpdateThread() = com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+                override fun update(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    val payload = (tree.lastSelectedPathComponent as? javax.swing.tree.DefaultMutableTreeNode)?.userObject
+                    e.presentation.isEnabled = payload is com.example.ghactions.domain.Job
+                        || payload is com.example.ghactions.domain.Step
+                }
+                override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    openSelectionInNewWindow()
+                }
+            })
+        }
+        val tb = com.intellij.openapi.actionSystem.ActionManager.getInstance()
+            .createActionToolbar(com.intellij.openapi.actionSystem.ActionPlaces.TOOLWINDOW_CONTENT, group, true)
+        tb.targetComponent = this
+        return tb
     }
 
     override fun dispose() {
