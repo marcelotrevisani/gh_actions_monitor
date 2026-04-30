@@ -72,6 +72,16 @@ sealed class SummaryState {
     data class Section(val jobName: String, val output: com.example.ghactions.domain.CheckRunOutput)
 }
 
+/** State of the aggregated check-run annotations for a run. */
+sealed class AnnotationsState {
+    data object Idle : AnnotationsState()
+    data object Loading : AnnotationsState()
+    data class Loaded(val items: List<Item>) : AnnotationsState()
+    data class Error(val httpStatus: Int?, val message: String) : AnnotationsState()
+
+    data class Item(val jobName: String, val annotation: com.example.ghactions.domain.Annotation)
+}
+
 /**
  * Project-scoped state cache. Single source of truth for run, job, and log data.
  * Never throws — errors land in the appropriate StateFlow's [Error] variant.
@@ -128,6 +138,13 @@ class RunRepository(
 
     private fun summaryFlow(runId: com.example.ghactions.domain.RunId): MutableStateFlow<SummaryState> =
         _summariesByRun.computeIfAbsent(runId) { MutableStateFlow(SummaryState.Idle) }
+
+    private val _annotationsByRun = ConcurrentHashMap<com.example.ghactions.domain.RunId, MutableStateFlow<AnnotationsState>>()
+    fun annotationsState(runId: com.example.ghactions.domain.RunId): StateFlow<AnnotationsState> =
+        _annotationsByRun.computeIfAbsent(runId) { MutableStateFlow(AnnotationsState.Idle) }.asStateFlow()
+
+    private fun annotationsFlow(runId: com.example.ghactions.domain.RunId): MutableStateFlow<AnnotationsState> =
+        _annotationsByRun.computeIfAbsent(runId) { MutableStateFlow(AnnotationsState.Idle) }
 
     /** Cached run-logs zips keyed by run id. Cleared by [invalidateAll]. */
     private val _archivesByRun = ConcurrentHashMap<RunId, RunLogsArchive>()
@@ -209,6 +226,30 @@ class RunRepository(
         } catch (e: Throwable) {
             log.warn("refreshSummary threw unexpectedly", e)
             SummaryState.Error(null, e.message ?: e::class.java.simpleName)
+        }
+    }
+
+    fun refreshAnnotations(runId: com.example.ghactions.domain.RunId): CJob = scope.launch {
+        val repo = boundRepo() ?: return@launch
+        val client = clientFactory() ?: run {
+            annotationsFlow(runId).value =
+                AnnotationsState.Error(null, "No credentials available for ${repo.host}")
+            return@launch
+        }
+        annotationsFlow(runId).value = AnnotationsState.Loading
+        annotationsFlow(runId).value = try {
+            val jobs = client.listJobs(repo, runId)
+            val items = jobs.flatMap { job ->
+                val crid = job.checkRunId ?: return@flatMap emptyList()
+                client.listAnnotations(repo, crid).map { ann -> AnnotationsState.Item(job.name, ann) }
+            }
+            AnnotationsState.Loaded(items)
+        } catch (e: com.example.ghactions.api.GitHubApiException) {
+            log.warn("refreshAnnotations failed: status=${e.status}", e)
+            AnnotationsState.Error(e.status, e.message ?: "API error")
+        } catch (e: Throwable) {
+            log.warn("refreshAnnotations threw unexpectedly", e)
+            AnnotationsState.Error(null, e.message ?: e::class.java.simpleName)
         }
     }
 
@@ -324,6 +365,7 @@ class RunRepository(
         _stepLogs.values.forEach { it.value = LogState.Idle }
         _artifactsByRun.values.forEach { it.value = ArtifactsState.Idle }
         _summariesByRun.values.forEach { it.value = SummaryState.Idle }
+        _annotationsByRun.values.forEach { it.value = AnnotationsState.Idle }
         _archivesByRun.clear()
     }
 

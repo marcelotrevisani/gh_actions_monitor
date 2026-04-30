@@ -85,4 +85,51 @@ class RunRepositoryCheckRunsTest {
         assertEquals(1, (state as SummaryState.Loaded).sections.size)
         assertEquals("test", state.sections[0].jobName)
     }
+
+    @Test
+    fun `refreshAnnotations aggregates annotations across jobs`() = runTest {
+        val client = mockk<GitHubClient>()
+        coEvery { client.listJobs(repo, runId) } returns listOf(
+            job(1, "build", checkRunId = 11),
+            job(2, "test", checkRunId = 22)
+        )
+        coEvery { client.listAnnotations(repo, CheckRunId(11)) } returns listOf(
+            com.example.ghactions.domain.Annotation(
+                path = "src/main.kt", startLine = 1, endLine = 1,
+                level = com.example.ghactions.domain.AnnotationLevel.FAILURE,
+                title = "fail", message = "boom"
+            )
+        )
+        coEvery { client.listAnnotations(repo, CheckRunId(22)) } returns listOf(
+            com.example.ghactions.domain.Annotation(
+                path = "src/test.kt", startLine = 5, endLine = 5,
+                level = com.example.ghactions.domain.AnnotationLevel.WARNING,
+                title = null, message = "deprecated"
+            )
+        )
+        val repository = newRepo(client)
+
+        repository.refreshAnnotations(runId).join()
+        val state = repository.annotationsState(runId).first()
+        assertTrue(state is AnnotationsState.Loaded)
+        val items = (state as AnnotationsState.Loaded).items
+        assertEquals(2, items.size)
+        assertEquals("build", items[0].jobName)
+        assertEquals("src/main.kt", items[0].annotation.path)
+        assertEquals("test", items[1].jobName)
+    }
+
+    @Test
+    fun `refreshAnnotations skips jobs without a check_run_url`() = runTest {
+        val client = mockk<GitHubClient>()
+        coEvery { client.listJobs(repo, runId) } returns listOf(
+            job(1, "build", checkRunId = null)
+        )
+        val repository = newRepo(client)
+
+        repository.refreshAnnotations(runId).join()
+        val state = repository.annotationsState(runId).first()
+        assertTrue(state is AnnotationsState.Loaded)
+        assertEquals(emptyList(), (state as AnnotationsState.Loaded).items)
+    }
 }
