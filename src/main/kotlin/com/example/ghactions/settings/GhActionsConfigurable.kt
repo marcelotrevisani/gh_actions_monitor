@@ -30,6 +30,7 @@ class GhActionsConfigurable : Configurable {
     }
 
     override fun disposeUIResources() {
+        panel?.dispose()
         panel = null
     }
 }

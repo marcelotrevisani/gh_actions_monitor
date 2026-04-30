@@ -17,9 +17,13 @@ import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.components.JBTextField
+import com.intellij.openapi.Disposable
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComboBox
@@ -28,7 +32,7 @@ import javax.swing.JPasswordField
 /**
  * The Swing form. Only contains UI; persistence wiring happens in [GhActionsConfigurable].
  */
-class GhActionsSettingsPanel {
+class GhActionsSettingsPanel : Disposable {
 
     private val state = PluginSettings.getInstance().state.copy()
     private val patStorage = PatStorage()
@@ -47,12 +51,7 @@ class GhActionsSettingsPanel {
     private data class AccountChoice(val id: String?, val label: String) {
         override fun toString(): String = label
     }
-    private val accountChoices: List<AccountChoice> = buildList {
-        add(AccountChoice(id = null, label = "(none — use token below)"))
-        ideAccountSource.listAccounts().forEach { acct: IdeAccountInfo ->
-            add(AccountChoice(id = acct.id, label = "${acct.id} @ ${acct.host}"))
-        }
-    }
+    private var accountChoices: List<AccountChoice> = buildAccountChoices(ideAccountSource.listAccounts())
     private val accountCombo: JComboBox<AccountChoice> = JComboBox(DefaultComboBoxModel(accountChoices.toTypedArray())).apply {
         selectedIndex = accountChoices.indexOfFirst { it.id == state.preferredAccountId }
             .takeIf { it >= 0 } ?: 0
@@ -61,8 +60,48 @@ class GhActionsSettingsPanel {
     // Segmented button references for manual reset
     private var notificationLevelButton: SegmentedButton<String>? = null
 
+    // Lifetime-bound scope for live subscriptions (account list, auth status). Cancelled
+    // when the IntelliJ Configurable disposes its component.
+    private val panelScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     init {
         refreshAuthStatus()
+        observeIdeAccountChanges()
+    }
+
+    private fun buildAccountChoices(accounts: List<IdeAccountInfo>): List<AccountChoice> = buildList {
+        add(AccountChoice(id = null, label = "(none — use token below)"))
+        accounts.forEach { acct ->
+            add(AccountChoice(id = acct.id, label = "${acct.id} @ ${acct.host}"))
+        }
+    }
+
+    /**
+     * Subscribes to live account changes published by the bundled GitHub plugin's
+     * `GHAccountManager.accountsState`. When the user adds or removes an IDE account
+     * (e.g. via our *Add / manage GitHub accounts…* button), the dropdown updates
+     * without requiring the Settings dialog to be closed and reopened.
+     */
+    private fun observeIdeAccountChanges() {
+        panelScope.launch {
+            ideAccountSource.accountsFlow().collect { accounts ->
+                rebuildAccountCombo(accounts)
+            }
+        }
+    }
+
+    private fun rebuildAccountCombo(accounts: List<IdeAccountInfo>) {
+        val previouslySelectedId = (accountCombo.selectedItem as? AccountChoice)?.id
+        accountChoices = buildAccountChoices(accounts)
+        accountCombo.model = DefaultComboBoxModel(accountChoices.toTypedArray())
+        // Restore selection: prefer what the user had picked, fall back to the persisted setting.
+        val targetId = previouslySelectedId ?: state.preferredAccountId
+        accountCombo.selectedIndex = accountChoices.indexOfFirst { it.id == targetId }
+            .takeIf { it >= 0 } ?: 0
+    }
+
+    override fun dispose() {
+        panelScope.cancel()
     }
 
     val component: DialogPanel = panel {

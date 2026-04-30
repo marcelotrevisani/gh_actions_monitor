@@ -12,6 +12,17 @@ interface IdeGithubAccountSource {
      * (the resolver still works in PAT-only mode when this returns null).
      */
     suspend fun findToken(accountId: String): String? = null
+
+    /**
+     * Live stream of configured accounts. Emits at least once with the current set, then
+     * re-emits whenever the underlying source changes (the bundled GitHub plugin updates
+     * its `accountsState` when the user adds/removes an account). Used by the settings
+     * panel to refresh its dropdown without requiring a Settings dialog reopen.
+     *
+     * Default returns a one-shot flow of the current [listAccounts] — fine for tests.
+     */
+    fun accountsFlow(): kotlinx.coroutines.flow.Flow<List<IdeAccountInfo>> =
+        kotlinx.coroutines.flow.flowOf(listAccounts())
 }
 
 data class IdeAccountInfo(val id: String, val host: String)
@@ -136,4 +147,18 @@ class BundledGithubAccountSource : IdeGithubAccountSource {
         log.warn("findToken: lookup failed for id=$accountId", e)
         null
     }
+
+    override fun accountsFlow(): kotlinx.coroutines.flow.Flow<List<IdeAccountInfo>> =
+        kotlinx.coroutines.flow.flow {
+            try {
+                val mgr = com.intellij.openapi.components.service<
+                    org.jetbrains.plugins.github.authentication.accounts.GHAccountManager>()
+                mgr.accountsState.collect { accounts ->
+                    emit(accounts.map { IdeAccountInfo(it.id, it.server.toApiUrl().removeSuffix("/")) })
+                }
+            } catch (e: Throwable) {
+                log.warn("accountsFlow: failed", e)
+                emit(emptyList())
+            }
+        }
 }
