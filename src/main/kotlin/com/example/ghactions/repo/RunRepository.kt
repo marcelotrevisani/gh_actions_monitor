@@ -61,6 +61,12 @@ sealed class DownloadResult {
     data class Error(val httpStatus: Int?, val message: String) : DownloadResult()
 }
 
+/** Outcome of a write-side workflow run action (cancel / rerun). */
+sealed class ActionResult {
+    data object Success : ActionResult()
+    data class Error(val httpStatus: Int?, val message: String) : ActionResult()
+}
+
 /** State of the aggregated check-run summaries for a run. */
 sealed class SummaryState {
     data object Idle : SummaryState()
@@ -355,6 +361,39 @@ class RunRepository(
                 "Step $stepNumber (\"$stepName\") not found for job '$jobName'. " +
                     "Jobs in archive: $jobs. Step files for this job: $stepFiles"
             )
+        }
+    }
+
+    suspend fun cancelRun(runId: com.example.ghactions.domain.RunId): ActionResult =
+        runAction(runId, "cancelRun") { client, repo -> client.cancelRun(repo, runId) }
+
+    suspend fun rerunRun(runId: com.example.ghactions.domain.RunId): ActionResult =
+        runAction(runId, "rerunRun") { client, repo -> client.rerunRun(repo, runId) }
+
+    suspend fun rerunFailedJobs(runId: com.example.ghactions.domain.RunId): ActionResult =
+        runAction(runId, "rerunFailedJobs") { client, repo -> client.rerunFailedJobs(repo, runId) }
+
+    private suspend fun runAction(
+        runId: com.example.ghactions.domain.RunId,
+        label: String,
+        block: suspend (com.example.ghactions.api.GitHubClient, com.example.ghactions.events.BoundRepo) -> Unit
+    ): ActionResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val repo = boundRepo() ?: return@withContext ActionResult.Error(null, "No bound repo")
+        val client = clientFactory() ?: return@withContext ActionResult.Error(
+            null, "No credentials available for ${repo.host}"
+        )
+        try {
+            block(client, repo)
+            // Trigger an out-of-band refresh so the UI catches up faster than the next
+            // polling tick. Fire-and-forget — the action's result is independent of refresh.
+            refreshRuns()
+            ActionResult.Success
+        } catch (e: com.example.ghactions.api.GitHubApiException) {
+            log.warn("$label failed: status=${e.status}", e)
+            ActionResult.Error(e.status, e.message ?: "API error")
+        } catch (e: Throwable) {
+            log.warn("$label threw unexpectedly", e)
+            ActionResult.Error(null, e.message ?: e::class.java.simpleName)
         }
     }
 
