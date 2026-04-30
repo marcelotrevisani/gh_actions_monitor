@@ -9,7 +9,7 @@ class GitHubAccountResolverTest {
 
     private fun fakeIdeSource(vararg accounts: Pair<String, String>) =
         object : IdeGithubAccountSource {
-            override fun listAccounts() = accounts.map { (id, host) -> IdeAccountInfo(id, host) }
+            override fun listAccounts() = accounts.map { (id, host) -> IdeAccountInfo(id = id, name = id, host = host) }
         }
 
     private fun resolver(
@@ -61,8 +61,8 @@ class GitHubAccountResolverTest {
         }
         val ideSource = object : IdeGithubAccountSource {
             override fun listAccounts() = listOf(
-                IdeAccountInfo("acct-1", "https://api.github.com"),
-                IdeAccountInfo("acct-2", "https://api.github.com")
+                IdeAccountInfo(id = "acct-1", name = "acct-1", host = "https://api.github.com"),
+                IdeAccountInfo(id = "acct-2", name = "acct-2", host = "https://api.github.com")
             )
         }
         val r = GitHubAccountResolver(ideSource, pats, preferredAccountId = "acct-2")
@@ -88,7 +88,7 @@ class GitHubAccountResolverTest {
         accounts: List<Pair<String, String>>,
         tokenFor: Map<String, String> = emptyMap()
     ) = object : IdeGithubAccountSource {
-        override fun listAccounts() = accounts.map { (id, host) -> IdeAccountInfo(id, host) }
+        override fun listAccounts() = accounts.map { (id, host) -> IdeAccountInfo(id = id, name = id, host = host) }
         override suspend fun findToken(accountId: String): String? = tokenFor[accountId]
     }
 

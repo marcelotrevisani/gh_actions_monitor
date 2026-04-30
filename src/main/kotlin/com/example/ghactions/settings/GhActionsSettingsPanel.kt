@@ -72,7 +72,7 @@ class GhActionsSettingsPanel : Disposable {
     private fun buildAccountChoices(accounts: List<IdeAccountInfo>): List<AccountChoice> = buildList {
         add(AccountChoice(id = null, label = "(none — use token below)"))
         accounts.forEach { acct ->
-            add(AccountChoice(id = acct.id, label = "${acct.id} @ ${acct.host}"))
+            add(AccountChoice(id = acct.id, label = "${acct.name} (${acct.host})"))
         }
     }
 
@@ -256,7 +256,12 @@ class GhActionsSettingsPanel : Disposable {
             val text = when (val auth = resolved?.auth) {
                 null -> "nothing — configure above"
                 is com.example.ghactions.auth.AuthSource.Pat -> "PAT ($baseUrl)"
-                is com.example.ghactions.auth.AuthSource.IdeAccount -> "IDE account ${auth.accountId} ($baseUrl)"
+                is com.example.ghactions.auth.AuthSource.IdeAccount -> {
+                    val displayName = ideAccountSource.listAccounts()
+                        .firstOrNull { it.id == auth.accountId }?.name
+                        ?: auth.accountId
+                    "IDE account $displayName ($baseUrl)"
+                }
             }
             // ModalityState.any() so the EDT update lands while the Settings dialog is
             // modal. Without it, the runnable is queued but never runs — same bug as Test

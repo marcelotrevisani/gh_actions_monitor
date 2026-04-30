@@ -25,7 +25,12 @@ interface IdeGithubAccountSource {
         kotlinx.coroutines.flow.flowOf(listAccounts())
 }
 
-data class IdeAccountInfo(val id: String, val host: String)
+/**
+ * One IDE-configured account. [id] is the bundled plugin's stable UUID — the value we
+ * persist in `PluginSettings.preferredAccountId`. [name] is the human-readable GitHub
+ * login (e.g. "octocat"); used purely for display.
+ */
+data class IdeAccountInfo(val id: String, val name: String, val host: String)
 
 /** Anything that can look up a PAT for a host. Pulled out for testability. */
 interface PatLookup {
@@ -122,12 +127,25 @@ class BundledGithubAccountSource : IdeGithubAccountSource {
     override fun listAccounts(): List<IdeAccountInfo> = try {
         val mgr = com.intellij.openapi.components.service<
             org.jetbrains.plugins.github.authentication.accounts.GHAccountManager>()
-        mgr.accountsState.value.map { acct ->
+        val raw = mgr.accountsState.value
+        val mapped = raw.map { acct ->
             IdeAccountInfo(
                 id = acct.id,
+                name = acct.name,
                 host = acct.server.toApiUrl().removeSuffix("/")
             )
         }
+        // Defensive: the bundled plugin's Set<GithubAccount> can theoretically
+        // dedupe distinct accounts if its equals() ignores the id. Keep the
+        // first occurrence per id so the dropdown surfaces the correct count.
+        val deduped = mapped.distinctBy { it.id }
+        if (mapped.size != deduped.size || raw.size != mapped.size) {
+            log.info(
+                "listAccounts: bundled-plugin Set size=${raw.size}, mapped=${mapped.size}, distinctById=${deduped.size}; " +
+                    "ids=${deduped.map { it.id }}, names=${deduped.map { it.name }}"
+            )
+        }
+        deduped
     } catch (e: Throwable) {
         log.warn("Failed to read IDE GitHub accounts; falling back to empty list", e)
         emptyList()
@@ -154,7 +172,14 @@ class BundledGithubAccountSource : IdeGithubAccountSource {
                 val mgr = com.intellij.openapi.components.service<
                     org.jetbrains.plugins.github.authentication.accounts.GHAccountManager>()
                 mgr.accountsState.collect { accounts ->
-                    emit(accounts.map { IdeAccountInfo(it.id, it.server.toApiUrl().removeSuffix("/")) })
+                    val mapped = accounts.map {
+                        IdeAccountInfo(
+                            id = it.id,
+                            name = it.name,
+                            host = it.server.toApiUrl().removeSuffix("/")
+                        )
+                    }
+                    emit(mapped.distinctBy { it.id })
                 }
             } catch (e: Throwable) {
                 log.warn("accountsFlow: failed", e)
