@@ -126,6 +126,8 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         summaryPanel.showRun(run.id)
         annotationsPanel.showRun(run.id)
         artifactsPanel.showRun(run.id)
+        project.getService(com.example.ghactions.editor.ActiveAnnotationsService::class.java)
+            .setActiveRun(run.id)
     }
 
     /**
@@ -144,6 +146,8 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         summaryPanel.clear()
         annotationsPanel.clear()
         artifactsPanel.clear()
+        project.getService(com.example.ghactions.editor.ActiveAnnotationsService::class.java)
+            .setActiveRun(null)
     }
 
     private fun renderJobs(state: JobsState) {
