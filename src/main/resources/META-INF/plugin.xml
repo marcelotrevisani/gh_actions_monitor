@@ -27,5 +27,6 @@
             anchor="right"
             icon="AllIcons.Vcs.Vendors.Github"
             factoryClass="com.example.ghactions.ui.GhActionsToolWindowFactory"/>
+        <notificationGroup id="GitHub Actions Monitor" displayType="BALLOON"/>
     </extensions>
 </idea-plugin>
