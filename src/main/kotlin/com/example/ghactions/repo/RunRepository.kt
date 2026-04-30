@@ -220,9 +220,21 @@ class RunRepository(
         summaryFlow(runId).value = SummaryState.Loading
         summaryFlow(runId).value = try {
             val jobs = client.listJobs(repo, runId)
+            val withCheckRun = jobs.count { it.checkRunId != null }
+            log.info("refreshSummary(run=${runId.value}): ${jobs.size} job(s), $withCheckRun with check_run_url")
             val sections = jobs.mapNotNull { job ->
-                val crid = job.checkRunId ?: return@mapNotNull null
+                val crid = job.checkRunId ?: run {
+                    log.info("refreshSummary: job '${job.name}' has no check_run_url, skipping")
+                    return@mapNotNull null
+                }
                 val output = client.getCheckRun(repo, crid)
+                log.info(
+                    "refreshSummary: job '${job.name}' check_run=${crid.value} " +
+                        "title.len=${output.title?.length ?: 0} " +
+                        "summary.len=${output.summary?.length ?: 0} " +
+                        "text.len=${output.text?.length ?: 0} " +
+                        "annotations=${output.annotationsCount}"
+                )
                 SummaryState.Section(job.name, output)
             }
             SummaryState.Loaded(sections)
