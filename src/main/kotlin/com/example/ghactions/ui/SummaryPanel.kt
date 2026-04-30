@@ -134,8 +134,19 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
     private fun buildSectionsHtml(sections: List<SummaryState.Section>): String =
         sections.joinToString(separator = "<hr/>") { section ->
             val header = "<h2>${escape(section.jobName)}</h2>"
-            val body = section.output.summary?.takeIf { it.isNotBlank() }?.let { renderMarkdown(it) }
-                ?: "<p><i>(no summary)</i></p>"
+            // GitHub stores `$GITHUB_STEP_SUMMARY` content in either `output.summary`
+            // (typical) or `output.text` (longer content sometimes lands there). Title is
+            // a one-line headline. Render whichever is non-blank, joined.
+            val parts = listOfNotNull(
+                section.output.title?.takeIf { it.isNotBlank() },
+                section.output.summary?.takeIf { it.isNotBlank() },
+                section.output.text?.takeIf { it.isNotBlank() }
+            )
+            val body = if (parts.isEmpty()) {
+                "<p><i>(no summary content for this job)</i></p>"
+            } else {
+                parts.joinToString("\n\n") { renderMarkdown(it) }
+            }
             header + body
         }
 
