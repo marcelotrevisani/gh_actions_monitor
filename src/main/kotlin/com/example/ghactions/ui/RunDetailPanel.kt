@@ -123,7 +123,7 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         currentRunFlowJob = scope.launch {
             repository.jobsState(run.id).collect { state -> renderJobs(state) }
         }
-        summaryPanel.showRun(run.id)
+        summaryPanel.showRun(run)
         annotationsPanel.showRun(run.id)
         artifactsPanel.showRun(run.id)
         project.getService(com.example.ghactions.editor.ActiveAnnotationsService::class.java)

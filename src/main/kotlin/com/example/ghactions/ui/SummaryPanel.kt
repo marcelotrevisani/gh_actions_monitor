@@ -1,6 +1,6 @@
 package com.example.ghactions.ui
 
-import com.example.ghactions.domain.RunId
+import com.example.ghactions.domain.Run
 import com.example.ghactions.repo.RunRepository
 import com.example.ghactions.repo.SummaryState
 import com.example.ghactions.repo.friendlyApiError
@@ -41,6 +41,7 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val repository = project.getService(RunRepository::class.java)
     private var observerJob: CJob? = null
+    private var currentRun: Run? = null
 
     private val flavour = GFMFlavourDescriptor()
 
@@ -67,15 +68,17 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         setHtml(emptyMessageHtml("Select a run to see its summary."))
     }
 
-    fun showRun(runId: RunId) {
+    fun showRun(run: Run) {
+        currentRun = run
         observerJob?.cancel()
         observerJob = scope.launch {
-            repository.summaryState(runId).collect { render(it) }
+            repository.summaryState(run.id).collect { render(it) }
         }
-        repository.refreshSummary(runId)
+        repository.refreshSummary(run.id)
     }
 
     fun clear() {
+        currentRun = null
         observerJob?.cancel()
         observerJob = null
         ApplicationManager.getApplication().invokeLater {
@@ -87,14 +90,37 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         val html = when (state) {
             is SummaryState.Idle -> emptyMessageHtml("Select a run to see its summary.")
             is SummaryState.Loading -> emptyMessageHtml("Loading summary…")
-            is SummaryState.Loaded -> if (state.sections.isEmpty()) {
-                emptyMessageHtml("No check-run summaries for this run.")
-            } else {
-                buildSectionsHtml(state.sections)
+            is SummaryState.Loaded -> {
+                val sectionsHtml = if (state.sections.isEmpty()) "" else buildSectionsHtml(state.sections)
+                val hasContent = state.sections.any { hasAnyContent(it.output) }
+                val link = githubLinkHtml()
+                if (state.sections.isEmpty()) {
+                    emptyMessageHtml(
+                        "No check-run summaries for this run. " +
+                            "GitHub Actions step summaries (\$GITHUB_STEP_SUMMARY) aren't always exposed " +
+                            "via the REST API."
+                    ) + link
+                } else if (!hasContent) {
+                    sectionsHtml + link
+                } else {
+                    sectionsHtml
+                }
             }
             is SummaryState.Error -> emptyMessageHtml(friendlyApiError(state.httpStatus, state.message))
         }
         ApplicationManager.getApplication().invokeLater { setHtml(html) }
+    }
+
+    private fun hasAnyContent(output: com.example.ghactions.domain.CheckRunOutput): Boolean =
+        !output.title.isNullOrBlank() || !output.summary.isNullOrBlank() || !output.text.isNullOrBlank()
+
+    private fun githubLinkHtml(): String {
+        val url = currentRun?.htmlUrl ?: return ""
+        return """
+            <div style="text-align:center; padding:16px;">
+              <a href="$url">Open the run's Summary page on GitHub</a>
+            </div>
+        """.trimIndent()
     }
 
     private fun setHtml(body: String) {
