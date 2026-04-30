@@ -14,3 +14,8 @@ value class JobId(val value: Long) {
 value class ArtifactId(val value: Long) {
     override fun toString(): String = value.toString()
 }
+
+@JvmInline
+value class CheckRunId(val value: Long) {
+    override fun toString(): String = value.toString()
+}
