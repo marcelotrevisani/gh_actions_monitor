@@ -28,8 +28,17 @@ sealed class PullRequestListState {
     data class Error(val httpStatus: Int?, val message: String) : PullRequestListState()
 }
 
-/** A PR plus the most recent workflow run whose `head_branch` matches [pr.headRef]. */
-data class PullRequestWithRun(val pr: PullRequest, val latestRun: Run?)
+/**
+ * A PR plus the most recent workflow run *per workflow* whose `head_branch` matches
+ * [pr.headRef]. A single PR push can trigger multiple workflows (CI, security scan,
+ * deploy, …); we keep the latest run for each so the UI can list them all.
+ *
+ * [latestRuns] is sorted newest-updated first; empty when no runs match the PR's branch.
+ */
+data class PullRequestWithRun(val pr: PullRequest, val latestRuns: List<Run>) {
+    /** Convenience for callers that only want the most-recent run across all workflows. */
+    val latestRun: Run? get() = latestRuns.firstOrNull()
+}
 
 /**
  * Project-scoped state cache for pull requests. Single source of truth for the PR tree.
@@ -75,9 +84,11 @@ class PullRequestRepository(
             val runs = client.listRunsForRepo(repo, perPage = 100)
             val byBranch = runs.groupBy { it.headBranch }
             val entries = prs.map { pr ->
-                val latest = byBranch[pr.headRef].orEmpty()
-                    .maxByOrNull { it.updatedAt }
-                PullRequestWithRun(pr, latest)
+                val latestPerWorkflow = byBranch[pr.headRef].orEmpty()
+                    .groupBy { it.workflowName }
+                    .mapNotNull { (_, group) -> group.maxByOrNull { it.updatedAt } }
+                    .sortedByDescending { it.updatedAt }
+                PullRequestWithRun(pr, latestPerWorkflow)
             }
             PullRequestListState.Loaded(entries)
         } catch (e: GitHubApiException) {

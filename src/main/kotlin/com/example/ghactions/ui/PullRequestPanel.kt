@@ -167,10 +167,12 @@ class PullRequestPanel(
         rootNode.removeAllChildren()
         entries.forEach { entry ->
             val prNode = DefaultMutableTreeNode(entry.pr)
-            if (entry.latestRun != null) {
-                prNode.add(DefaultMutableTreeNode(entry.latestRun))
-            } else {
+            if (entry.latestRuns.isEmpty()) {
                 prNode.add(DefaultMutableTreeNode(NO_RUN_PLACEHOLDER))
+            } else {
+                entry.latestRuns.forEach { run ->
+                    prNode.add(DefaultMutableTreeNode(run))
+                }
             }
             rootNode.add(prNode)
         }
@@ -194,8 +196,9 @@ class PullRequestPanel(
         val matchIdx = entries.indexOfFirst { it.pr.headRef == branch }
         if (matchIdx < 0) return
         val matched = entries[matchIdx]
-        if (matched.latestRun == null) return
-        // Path: root → matched PR node → its run child (added at index 0 in renderEntries).
+        if (matched.latestRuns.isEmpty()) return
+        // Path: root → matched PR node → its first run child (newest run, added at index 0
+        // in renderEntries because latestRuns is already sorted newest-first).
         val prNode = rootNode.getChildAt(matchIdx) as DefaultMutableTreeNode
         val runNode = prNode.getChildAt(0) as DefaultMutableTreeNode
         tree.selectionPath = javax.swing.tree.TreePath(runNode.path)

@@ -35,8 +35,13 @@ class PullRequestRepositoryTest {
             updatedAt = Instant.parse("2026-04-29T10:00:00Z")
         )
 
-    private fun aRun(id: Long, branch: String, updatedSeconds: Long): Run = Run(
-        id = RunId(id), workflowName = "CI",
+    private fun aRun(
+        id: Long,
+        branch: String,
+        updatedSeconds: Long,
+        workflowName: String = "CI"
+    ): Run = Run(
+        id = RunId(id), workflowName = workflowName,
         status = RunStatus.COMPLETED, conclusion = RunConclusion.SUCCESS,
         headBranch = branch, headSha = "sha-$id", event = "pull_request",
         actorLogin = "octocat",
@@ -54,16 +59,17 @@ class PullRequestRepositoryTest {
     }
 
     @Test
-    fun `refreshPullRequests joins each PR with the most recent matching run by branch`() = runTest {
+    fun `refreshPullRequests joins each PR with the most recent matching run per workflow`() = runTest {
         val client = mockk<GitHubClient>(relaxed = true)
         val pr1 = aPr(1, branch = "feat/login")
         val pr2 = aPr(2, branch = "feat/cache")
         coEvery { client.listPullRequests(repo, PullRequestState.OPEN, any()) } returns listOf(pr1, pr2)
         coEvery { client.listRunsForRepo(repo, any()) } returns listOf(
-            aRun(101, "feat/login", updatedSeconds = 100),
-            aRun(102, "feat/login", updatedSeconds = 200), // newer — should win
-            aRun(103, "feat/cache", updatedSeconds = 150),
-            aRun(104, "main", updatedSeconds = 999)        // unrelated — must be ignored
+            aRun(101, "feat/login", updatedSeconds = 100, workflowName = "CI"),
+            aRun(102, "feat/login", updatedSeconds = 200, workflowName = "CI"),     // newer CI — should win
+            aRun(105, "feat/login", updatedSeconds = 180, workflowName = "Lint"),    // separate workflow
+            aRun(103, "feat/cache", updatedSeconds = 150, workflowName = "CI"),
+            aRun(104, "main", updatedSeconds = 999, workflowName = "CI")             // unrelated — must be ignored
         )
         val repository = PullRequestRepository(boundRepo = { repo }, clientFactory = { client }, scope = unconfinedScope())
 
@@ -72,12 +78,16 @@ class PullRequestRepositoryTest {
         val state = repository.pullRequestsState.value
         assertIs<PullRequestListState.Loaded>(state)
         assertEquals(2, state.entries.size)
-        assertEquals(RunId(102), state.entries[0].latestRun?.id)
-        assertEquals(RunId(103), state.entries[1].latestRun?.id)
+
+        // pr1: two workflows (CI 102, Lint 105), sorted newest-first
+        assertEquals(listOf(RunId(102), RunId(105)), state.entries[0].latestRuns.map { it.id })
+
+        // pr2: one workflow
+        assertEquals(listOf(RunId(103)), state.entries[1].latestRuns.map { it.id })
     }
 
     @Test
-    fun `refreshPullRequests sets latestRun to null when no run matches the PR's branch`() = runTest {
+    fun `refreshPullRequests yields empty latestRuns when no run matches the PR's branch`() = runTest {
         val client = mockk<GitHubClient>(relaxed = true)
         coEvery { client.listPullRequests(repo, PullRequestState.OPEN, any()) } returns listOf(aPr(1, "feat/lonely"))
         coEvery { client.listRunsForRepo(repo, any()) } returns listOf(aRun(101, "main", 100))
@@ -88,6 +98,7 @@ class PullRequestRepositoryTest {
         val state = repository.pullRequestsState.value
         assertIs<PullRequestListState.Loaded>(state)
         assertEquals(1, state.entries.size)
+        assertEquals(emptyList(), state.entries[0].latestRuns)
         assertNull(state.entries[0].latestRun)
     }
 

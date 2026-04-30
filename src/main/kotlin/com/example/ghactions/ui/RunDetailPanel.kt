@@ -126,7 +126,10 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
             }
             is JobsState.Loaded -> {
                 rootNode.removeAllChildren()
-                state.jobs.forEach { job ->
+                // Sort jobs alphabetically by name — matrix runs (e.g. "build (linux)",
+                // "build (mac)", "build (windows)") group together, easier to scan than
+                // GitHub's wire order which depends on scheduling.
+                state.jobs.sortedBy { it.name }.forEach { job ->
                     val jobNode = DefaultMutableTreeNode(job)
                     job.steps.forEach { step -> jobNode.add(DefaultMutableTreeNode(step)) }
                     rootNode.add(jobNode)
@@ -250,11 +253,43 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
                     openSelectionInNewWindow()
                 }
             })
+            add(object : com.intellij.openapi.actionSystem.AnAction(
+                "Expand All",
+                "Expand every job in the tree",
+                com.intellij.icons.AllIcons.Actions.Expandall
+            ) {
+                override fun getActionUpdateThread() = com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+                override fun update(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    e.presentation.isEnabled = rootNode.childCount > 0
+                }
+                override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    expandAllJobs()
+                }
+            })
+            add(object : com.intellij.openapi.actionSystem.AnAction(
+                "Collapse All",
+                "Collapse every job in the tree",
+                com.intellij.icons.AllIcons.Actions.Collapseall
+            ) {
+                override fun getActionUpdateThread() = com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+                override fun update(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    e.presentation.isEnabled = rootNode.childCount > 0
+                }
+                override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    collapseAllJobs()
+                }
+            })
         }
         val tb = com.intellij.openapi.actionSystem.ActionManager.getInstance()
             .createActionToolbar(com.intellij.openapi.actionSystem.ActionPlaces.TOOLWINDOW_CONTENT, group, true)
         tb.targetComponent = this
         return tb
+    }
+
+    private fun collapseAllJobs() {
+        for (i in 0 until rootNode.childCount) {
+            tree.collapsePath(TreePath((rootNode.getChildAt(i) as DefaultMutableTreeNode).path))
+        }
     }
 
     override fun dispose() {
