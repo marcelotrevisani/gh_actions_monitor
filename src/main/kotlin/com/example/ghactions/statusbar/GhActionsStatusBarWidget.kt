@@ -68,9 +68,45 @@ class GhActionsStatusBarWidget(private val project: Project) : StatusBarWidget, 
     override fun getTooltipText(): String = "GitHub Actions: ${summary.tooltip}"
 
     override fun getClickConsumer(): com.intellij.util.Consumer<MouseEvent> =
-        com.intellij.util.Consumer {
-            ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.activate(null)
+        com.intellij.util.Consumer { e ->
+            if (javax.swing.SwingUtilities.isRightMouseButton(e)) {
+                showPopupMenu(e)
+            } else {
+                ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.activate(null)
+            }
         }
+
+    private fun showPopupMenu(e: MouseEvent) {
+        val menu = javax.swing.JPopupMenu()
+
+        menu.add(javax.swing.JMenuItem("Refresh now").apply {
+            addActionListener { project.getService(RunRepository::class.java).refreshRuns() }
+        })
+
+        val settings = com.example.ghactions.auth.PluginSettings.getInstance().state
+        val pollLabel = if (settings.livePollingEnabled) "Disable live polling" else "Enable live polling"
+        menu.add(javax.swing.JMenuItem(pollLabel).apply {
+            addActionListener {
+                com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction {
+                    val s = com.example.ghactions.auth.PluginSettings.getInstance().state
+                    s.livePollingEnabled = !s.livePollingEnabled
+                }
+            }
+        })
+
+        menu.addSeparator()
+
+        menu.add(javax.swing.JMenuItem("Plugin settings…").apply {
+            addActionListener {
+                com.intellij.openapi.options.ShowSettingsUtil.getInstance()
+                    .showSettingsDialog(project, "GitHub Actions Monitor")
+            }
+        })
+
+        // The MouseEvent comes from the widget's component; show the menu there.
+        val component = e.component ?: return
+        menu.show(component, e.x, e.y)
+    }
 
     companion object {
         const val WIDGET_ID = "GhActionsStatusBarWidget"

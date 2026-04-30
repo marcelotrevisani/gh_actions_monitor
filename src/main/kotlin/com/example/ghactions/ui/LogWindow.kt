@@ -27,7 +27,7 @@ class LogWindow(
     windowTitle: String,
     private val statusHint: String,
     private val source: Flow<LogState>
-) : FrameWrapper(project, dimensionKey = null, isDialog = false) {
+) : FrameWrapper(project, dimensionKey = "GhActions.DetachedLogWindow", isDialog = false) {
 
     private val panel = LogViewerPanel()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
