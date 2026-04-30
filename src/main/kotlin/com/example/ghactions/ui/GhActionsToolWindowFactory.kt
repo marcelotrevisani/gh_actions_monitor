@@ -25,11 +25,18 @@ class GhActionsToolWindowFactory : ToolWindowFactory {
         val controller = ToolWindowController(project, toolWindow)
         controller.refresh()
 
-        val appBus = ApplicationManager.getApplication().messageBus.connect(toolWindow.disposable)
-        appBus.subscribe(Topics.AUTH_CHANGED, AuthChangedListener { controller.refresh() })
+        // Marshal listener callbacks to the EDT: VCS_REPOSITORY_MAPPING_UPDATED is published
+        // from VcsRepositoryManager's coroutine worker, and contentManager mutation requires
+        // the EDT. Without this, refresh() throws ThreadAccessException and leaves the tool
+        // window empty.
+        val app = ApplicationManager.getApplication()
+        val refreshOnEdt = Runnable { controller.refresh() }
+
+        val appBus = app.messageBus.connect(toolWindow.disposable)
+        appBus.subscribe(Topics.AUTH_CHANGED, AuthChangedListener { app.invokeLater(refreshOnEdt) })
 
         val projectBus = project.messageBus.connect(toolWindow.disposable)
-        projectBus.subscribe(Topics.REPO_BINDING_CHANGED, RepoBindingChangedListener { controller.refresh() })
+        projectBus.subscribe(Topics.REPO_BINDING_CHANGED, RepoBindingChangedListener { app.invokeLater(refreshOnEdt) })
 
         val coordinator = project.getService(com.example.ghactions.polling.PollingCoordinator::class.java)
         coordinator.setToolWindowVisible(toolWindow.isVisible)
