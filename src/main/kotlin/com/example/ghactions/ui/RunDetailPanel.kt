@@ -8,6 +8,7 @@ import com.example.ghactions.domain.Step
 import com.example.ghactions.repo.JobsState
 import com.example.ghactions.repo.LogState
 import com.example.ghactions.repo.RunRepository
+import com.example.ghactions.repo.friendlyApiError
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
@@ -135,7 +136,7 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
             }
             is JobsState.Error -> {
                 rootNode.removeAllChildren()
-                rootNode.add(DefaultMutableTreeNode("Failed: ${state.message}"))
+                rootNode.add(DefaultMutableTreeNode(friendlyApiError(state.httpStatus, state.message)))
                 treeModel.reload()
             }
         }
@@ -173,7 +174,7 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
             is LogState.Loading -> { logViewer.setText("(loading logs…)"); logViewer.setStatus(statusHint) }
             is LogState.Loaded -> { logViewer.setText(state.text); logViewer.setStatus(statusHint) }
             is LogState.Error -> {
-                logViewer.setText("Failed${state.httpStatus?.let { " ($it)" } ?: ""}: ${state.message}")
+                logViewer.setText(friendlyApiError(state.httpStatus, state.message))
                 logViewer.setStatus("")
             }
         }

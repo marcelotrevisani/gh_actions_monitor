@@ -8,6 +8,7 @@ import com.example.ghactions.domain.RunStatus
 import com.example.ghactions.repo.PullRequestListState
 import com.example.ghactions.repo.PullRequestRepository
 import com.example.ghactions.repo.PullRequestWithRun
+import com.example.ghactions.repo.friendlyApiError
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
@@ -239,9 +240,7 @@ class PullRequestPanel(
                 lastLoaded = state.entries
                 applyClientFilters()
             }
-            is PullRequestListState.Error -> showStatus(
-                "Failed${state.httpStatus?.let { " ($it)" } ?: ""}: ${state.message}"
-            )
+            is PullRequestListState.Error -> showStatus(friendlyApiError(state.httpStatus, state.message))
         }
     }
 

@@ -1,6 +1,7 @@
 package com.example.ghactions.ui
 
 import com.example.ghactions.repo.LogState
+import com.example.ghactions.repo.friendlyApiError
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.FrameWrapper
 import kotlinx.coroutines.CoroutineScope
@@ -48,7 +49,7 @@ class LogWindow(
             is LogState.Loading -> { panel.setText("(loading logs…)"); panel.setStatus(statusHint) }
             is LogState.Loaded -> { panel.setText(state.text); panel.setStatus(statusHint) }
             is LogState.Error -> {
-                panel.setText("Failed${state.httpStatus?.let { " ($it)" } ?: ""}: ${state.message}")
+                panel.setText(friendlyApiError(state.httpStatus, state.message))
                 panel.setStatus("")
             }
         }

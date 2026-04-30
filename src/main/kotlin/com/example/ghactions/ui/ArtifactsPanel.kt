@@ -6,6 +6,7 @@ import com.example.ghactions.domain.RunId
 import com.example.ghactions.repo.ArtifactsState
 import com.example.ghactions.repo.DownloadResult
 import com.example.ghactions.repo.RunRepository
+import com.example.ghactions.repo.friendlyApiError
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
@@ -198,9 +199,7 @@ class ArtifactsPanel(private val project: Project) : JPanel(BorderLayout()), Dis
                 if (state.artifacts.isEmpty()) showStatus("No artifacts uploaded by this run.")
                 else cardLayout.show(cardsPanel, CARD_TABLE)
             }
-            is ArtifactsState.Error -> showStatus(
-                "Failed${state.httpStatus?.let { " ($it)" } ?: ""}: ${state.message}"
-            )
+            is ArtifactsState.Error -> showStatus(friendlyApiError(state.httpStatus, state.message))
         }
     }
 
