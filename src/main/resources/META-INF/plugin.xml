@@ -7,6 +7,9 @@
         <br/>Authenticate via PAT or your IDE-configured GitHub account.
         <br/>Supports github.com and GitHub Enterprise Server.
         <br/><br/>Licensed under the Apache License 2.0.
+        <br/><br/><b>Disclaimer:</b> This software is provided "as is", without any
+        guarantee or warranty of any kind. The author does not provide any
+        guarantee about the software — use it at your own responsibility.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
