@@ -149,6 +149,44 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
     }
 
     /**
+     * `GET https://github.com/{owner}/{repo}/actions/runs/{run_id}/jobs/{job_id}/summary_raw`.
+     *
+     * Undocumented endpoint on the *web* host (not `api.github.com`) that returns the raw
+     * markdown a job's steps wrote to `$GITHUB_STEP_SUMMARY`. The REST check-run output
+     * fields don't always carry this content, so the web URL is the only stable path to
+     * the summary the GitHub UI displays.
+     *
+     * Auth: the same `Authorization: token <PAT>` header works on github.com as on the API
+     * for this URL. Returns null on 404 (job has no step summary). Throws for other errors.
+     */
+    suspend fun getStepSummaryRaw(
+        repo: BoundRepo,
+        runId: com.example.ghactions.domain.RunId,
+        jobId: com.example.ghactions.domain.JobId
+    ): String? = withContext(Dispatchers.IO) {
+        val webHost = repo.webBaseUrl()
+        val url = "$webHost/${repo.owner}/${repo.repo}/actions/runs/${runId.value}/jobs/${jobId.value}/summary_raw"
+        val response = http.get(url)
+        if (response.status.value == 404) return@withContext null
+        if (!response.status.isSuccess()) fail(response, "step summary")
+        response.bodyAsText()
+    }
+
+    /**
+     * Derive the GitHub web host from the API host stored on [BoundRepo].
+     * - `https://api.github.com` → `https://github.com`
+     * - `https://ghe.example.com/api/v3` → `https://ghe.example.com`
+     */
+    private fun BoundRepo.webBaseUrl(): String {
+        val h = this.host
+        return when {
+            h == "https://api.github.com" -> "https://github.com"
+            h.endsWith("/api/v3") -> h.removeSuffix("/api/v3")
+            else -> h
+        }
+    }
+
+    /**
      * `POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel`. GitHub returns 202 / 204
      * on success; 409 if the run is already terminal (cannot cancel).
      */

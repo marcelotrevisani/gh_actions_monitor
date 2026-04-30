@@ -46,12 +46,14 @@ class RunRepositoryCheckRunsTest {
     )
 
     @Test
-    fun `refreshSummary aggregates one CheckRunOutput per job`() = runTest {
+    fun `refreshSummary prefers raw step summary over check-run output`() = runTest {
         val client = mockk<GitHubClient>()
         coEvery { client.listJobs(repo, runId) } returns listOf(
             job(1, "build", checkRunId = 11),
             job(2, "test", checkRunId = 22)
         )
+        coEvery { client.getStepSummaryRaw(repo, runId, JobId(1)) } returns "# build markdown"
+        coEvery { client.getStepSummaryRaw(repo, runId, JobId(2)) } returns null  // no step summary
         coEvery { client.getCheckRun(repo, CheckRunId(11)) } returns
             CheckRunOutput(title = "Build", summary = "build OK", text = null, annotationsCount = 0)
         coEvery { client.getCheckRun(repo, CheckRunId(22)) } returns
@@ -64,17 +66,23 @@ class RunRepositoryCheckRunsTest {
         val sections = (state as SummaryState.Loaded).sections
         assertEquals(2, sections.size)
         assertEquals("build", sections[0].jobName)
-        assertEquals("build OK", sections[0].output.summary)
-        assertEquals("1 failure", sections[1].output.summary)
+        // Job 1 has both rawSummary and check-run output; both are kept on the section.
+        assertEquals("# build markdown", sections[0].rawSummary)
+        assertEquals("build OK", sections[0].output?.summary)
+        // Job 2 has no rawSummary; only check-run output is present.
+        assertEquals(null, sections[1].rawSummary)
+        assertEquals("1 failure", sections[1].output?.summary)
     }
 
     @Test
-    fun `refreshSummary skips jobs without a check_run_url`() = runTest {
+    fun `refreshSummary still emits a section for jobs without a check_run_url`() = runTest {
         val client = mockk<GitHubClient>()
         coEvery { client.listJobs(repo, runId) } returns listOf(
             job(1, "build", checkRunId = null),
             job(2, "test", checkRunId = 22)
         )
+        coEvery { client.getStepSummaryRaw(repo, runId, JobId(1)) } returns "build raw"
+        coEvery { client.getStepSummaryRaw(repo, runId, JobId(2)) } returns null
         coEvery { client.getCheckRun(repo, CheckRunId(22)) } returns
             CheckRunOutput(title = "Test", summary = "ok", text = null, annotationsCount = 0)
         val repository = newRepo(client)
@@ -82,8 +90,13 @@ class RunRepositoryCheckRunsTest {
         repository.refreshSummary(runId).join()
         val state = repository.summaryState(runId).first()
         assertTrue(state is SummaryState.Loaded)
-        assertEquals(1, (state as SummaryState.Loaded).sections.size)
-        assertEquals("test", state.sections[0].jobName)
+        val sections = (state as SummaryState.Loaded).sections
+        assertEquals(2, sections.size)
+        assertEquals("build", sections[0].jobName)
+        assertEquals("build raw", sections[0].rawSummary)
+        assertEquals(null, sections[0].output)  // no check-run for this job
+        assertEquals("test", sections[1].jobName)
+        assertEquals("ok", sections[1].output?.summary)
     }
 
     @Test

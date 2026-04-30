@@ -74,8 +74,20 @@ sealed class SummaryState {
     data class Loaded(val sections: List<Section>) : SummaryState()
     data class Error(val httpStatus: Int?, val message: String) : SummaryState()
 
-    /** One section per job that has a check-run; ordered as the jobs were returned. */
-    data class Section(val jobName: String, val output: com.example.ghactions.domain.CheckRunOutput)
+    /**
+     * One section per job; ordered as the jobs were returned.
+     *
+     * - [rawSummary] is the markdown the job wrote to `$GITHUB_STEP_SUMMARY`, fetched from
+     *   the undocumented `summary_raw` web endpoint. When present, it's authoritative —
+     *   it's what the GitHub UI shows on the run's Summary page.
+     * - [output] is the check-run output (title / summary / text), present when the job
+     *   has an associated check-run. Used as a fallback when `rawSummary` is null/blank.
+     */
+    data class Section(
+        val jobName: String,
+        val output: com.example.ghactions.domain.CheckRunOutput?,
+        val rawSummary: String? = null
+    )
 }
 
 /** State of the aggregated check-run annotations for a run. */
@@ -220,22 +232,31 @@ class RunRepository(
         summaryFlow(runId).value = SummaryState.Loading
         summaryFlow(runId).value = try {
             val jobs = client.listJobs(repo, runId)
-            val withCheckRun = jobs.count { it.checkRunId != null }
-            log.info("refreshSummary(run=${runId.value}): ${jobs.size} job(s), $withCheckRun with check_run_url")
-            val sections = jobs.mapNotNull { job ->
-                val crid = job.checkRunId ?: run {
-                    log.info("refreshSummary: job '${job.name}' has no check_run_url, skipping")
-                    return@mapNotNull null
+            log.info("refreshSummary(run=${runId.value}): ${jobs.size} job(s)")
+            val sections = jobs.map { job ->
+                // Try the undocumented summary_raw endpoint first — it's the authoritative
+                // source for `$GITHUB_STEP_SUMMARY` content (the REST check-run output
+                // doesn't always carry it).
+                val raw = try {
+                    client.getStepSummaryRaw(repo, runId, job.id)
+                } catch (e: Throwable) {
+                    log.warn("getStepSummaryRaw(job=${job.id.value}) failed", e)
+                    null
                 }
-                val output = client.getCheckRun(repo, crid)
+                // Always fetch the check-run output too if available — gives us the
+                // headline title even when the raw summary is empty.
+                val output = job.checkRunId?.let { crid ->
+                    runCatching { client.getCheckRun(repo, crid) }
+                        .onFailure { log.warn("getCheckRun(${crid.value}) failed", it) }
+                        .getOrNull()
+                }
                 log.info(
-                    "refreshSummary: job '${job.name}' check_run=${crid.value} " +
-                        "title.len=${output.title?.length ?: 0} " +
-                        "summary.len=${output.summary?.length ?: 0} " +
-                        "text.len=${output.text?.length ?: 0} " +
-                        "annotations=${output.annotationsCount}"
+                    "refreshSummary: job '${job.name}' raw.len=${raw?.length ?: 0} " +
+                        "checkRun.title.len=${output?.title?.length ?: 0} " +
+                        "checkRun.summary.len=${output?.summary?.length ?: 0} " +
+                        "checkRun.text.len=${output?.text?.length ?: 0}"
                 )
-                SummaryState.Section(job.name, output)
+                SummaryState.Section(jobName = job.name, output = output, rawSummary = raw)
             }
             SummaryState.Loaded(sections)
         } catch (e: com.example.ghactions.api.GitHubApiException) {

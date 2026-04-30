@@ -92,14 +92,10 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
             is SummaryState.Loading -> emptyMessageHtml("Loading summary…")
             is SummaryState.Loaded -> {
                 val sectionsHtml = if (state.sections.isEmpty()) "" else buildSectionsHtml(state.sections)
-                val hasContent = state.sections.any { hasAnyContent(it.output) }
+                val hasContent = state.sections.any { hasAnyContent(it) }
                 val link = githubLinkHtml()
                 if (state.sections.isEmpty()) {
-                    emptyMessageHtml(
-                        "No check-run summaries for this run. " +
-                            "GitHub Actions step summaries (\$GITHUB_STEP_SUMMARY) aren't always exposed " +
-                            "via the REST API."
-                    ) + link
+                    emptyMessageHtml("No jobs with summary content for this run.") + link
                 } else if (!hasContent) {
                     sectionsHtml + link
                 } else {
@@ -111,8 +107,11 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         ApplicationManager.getApplication().invokeLater { setHtml(html) }
     }
 
-    private fun hasAnyContent(output: com.example.ghactions.domain.CheckRunOutput): Boolean =
-        !output.title.isNullOrBlank() || !output.summary.isNullOrBlank() || !output.text.isNullOrBlank()
+    private fun hasAnyContent(section: SummaryState.Section): Boolean {
+        if (!section.rawSummary.isNullOrBlank()) return true
+        val out = section.output ?: return false
+        return !out.title.isNullOrBlank() || !out.summary.isNullOrBlank() || !out.text.isNullOrBlank()
+    }
 
     private fun githubLinkHtml(): String {
         val url = currentRun?.htmlUrl ?: return ""
@@ -160,18 +159,20 @@ class SummaryPanel(project: Project) : JPanel(BorderLayout()), Disposable {
     private fun buildSectionsHtml(sections: List<SummaryState.Section>): String =
         sections.joinToString(separator = "<hr/>") { section ->
             val header = "<h2>${escape(section.jobName)}</h2>"
-            // GitHub stores `$GITHUB_STEP_SUMMARY` content in either `output.summary`
-            // (typical) or `output.text` (longer content sometimes lands there). Title is
-            // a one-line headline. Render whichever is non-blank, joined.
-            val parts = listOfNotNull(
-                section.output.title?.takeIf { it.isNotBlank() },
-                section.output.summary?.takeIf { it.isNotBlank() },
-                section.output.text?.takeIf { it.isNotBlank() }
-            )
-            val body = if (parts.isEmpty()) {
-                "<p><i>(no summary content for this job)</i></p>"
+            // Prefer the raw `$GITHUB_STEP_SUMMARY` markdown (web endpoint) — it's the
+            // canonical source the GitHub UI displays. Fall back to check-run output
+            // (title/summary/text) when the runner didn't write a step summary.
+            val raw = section.rawSummary?.takeIf { it.isNotBlank() }
+            val body = if (raw != null) {
+                renderMarkdown(raw)
             } else {
-                parts.joinToString("\n\n") { renderMarkdown(it) }
+                val parts = listOfNotNull(
+                    section.output?.title?.takeIf { it.isNotBlank() },
+                    section.output?.summary?.takeIf { it.isNotBlank() },
+                    section.output?.text?.takeIf { it.isNotBlank() }
+                )
+                if (parts.isEmpty()) "<p><i>(no summary content for this job)</i></p>"
+                else parts.joinToString("\n\n") { renderMarkdown(it) }
             }
             header + body
         }
