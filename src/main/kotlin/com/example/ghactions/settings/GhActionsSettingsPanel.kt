@@ -209,18 +209,42 @@ class GhActionsSettingsPanel : Disposable {
         // Flush typed values from the form into [state] so we probe the URL the user actually sees.
         // DialogPanel.apply() pushes UI bindings into bound state without persisting elsewhere.
         component.apply()
+        // Sync the dropdown selection too — the user's *current* pick (not just the persisted
+        // value) drives credential resolution, otherwise selecting an IDE account and clicking
+        // Test still uses the previously-saved PAT.
+        state.preferredAccountId = (accountCombo.selectedItem as? AccountChoice)?.id
 
         val typed = String(tokenField.password)
-        val token = typed.ifEmpty { patStorage.getToken(state.baseUrl) ?: "" }
-        if (token.isEmpty()) {
-            statusLabel.text = "Enter a token first."
-            return
-        }
         val baseUrl = state.baseUrl
+        val preferredAccountId = state.preferredAccountId
         statusLabel.text = "Testing…"
         // Capture modality so the result lands on the EDT *while the settings dialog is open*.
         val modality = ModalityState.stateForComponent(component)
-        Thread {
+
+        panelScope.launch(Dispatchers.IO) {
+            val token = if (typed.isNotEmpty()) {
+                // User typed a fresh token in the field — test that one explicitly,
+                // even if an IDE account is also selected.
+                typed
+            } else {
+                val resolver = com.example.ghactions.auth.GitHubAccountResolver(
+                    ideSource = ideAccountSource,
+                    patLookup = object : com.example.ghactions.auth.PatLookup {
+                        override fun getToken(host: String) = patStorage.getToken(host)
+                    },
+                    preferredAccountId = preferredAccountId
+                )
+                resolver.resolveAuth(baseUrl)?.token.orEmpty()
+            }
+
+            if (token.isEmpty()) {
+                ApplicationManager.getApplication().invokeLater(
+                    { statusLabel.text = "No credentials found for $baseUrl. Pick an account or enter a token." },
+                    modality
+                )
+                return@launch
+            }
+
             val result = try {
                 TestConnection.probe(baseUrl, token)
             } catch (t: Throwable) {
@@ -234,7 +258,7 @@ class GhActionsSettingsPanel : Disposable {
                 }
                 refreshAuthStatus()
             }, modality)
-        }.apply { name = "GhActions-TestConnection"; isDaemon = true }.start()
+        }
     }
 
     /**
