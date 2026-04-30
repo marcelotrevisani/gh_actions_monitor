@@ -119,6 +119,24 @@ class GitHubClient(private val http: HttpClient) : AutoCloseable {
         response.body<ByteArray>()
     }
 
+    suspend fun getCheckRun(
+        repo: BoundRepo,
+        checkRunId: com.example.ghactions.domain.CheckRunId
+    ): com.example.ghactions.domain.CheckRunOutput = withContext(Dispatchers.IO) {
+        val response = http.get("/repos/${repo.owner}/${repo.repo}/check-runs/${checkRunId.value}")
+        if (!response.status.isSuccess()) fail(response, "check-run")
+        response.body<com.example.ghactions.api.dto.CheckRunDto>().toDomain()
+    }
+
+    suspend fun listAnnotations(
+        repo: BoundRepo,
+        checkRunId: com.example.ghactions.domain.CheckRunId
+    ): List<com.example.ghactions.domain.Annotation> = withContext(Dispatchers.IO) {
+        val response = http.get("/repos/${repo.owner}/${repo.repo}/check-runs/${checkRunId.value}/annotations")
+        if (!response.status.isSuccess()) fail(response, "annotations")
+        response.body<List<com.example.ghactions.api.dto.AnnotationDto>>().map { it.toDomain() }
+    }
+
     private suspend fun fail(response: HttpResponse, label: String): Nothing {
         val body = response.bodyAsText()
         val info = RateLimitInfo.fromHeaders(response.headers)
