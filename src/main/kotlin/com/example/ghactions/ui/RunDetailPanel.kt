@@ -67,10 +67,14 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
     }
 
     private val logViewer = LogViewerPanel()
+    private val summaryPanel = SummaryPanel(project)
+    private val annotationsPanel = AnnotationsPanel(project)
     private val artifactsPanel = ArtifactsPanel(project)
 
     private val detailTabs = com.intellij.ui.components.JBTabbedPane().apply {
         addTab("Logs", logViewer)
+        addTab("Summary", summaryPanel)
+        addTab("Annotations", annotationsPanel)
         addTab("Artifacts", artifactsPanel)
     }
 
@@ -114,6 +118,8 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         currentRunFlowJob = scope.launch {
             repository.jobsState(run.id).collect { state -> renderJobs(state) }
         }
+        summaryPanel.showRun(run.id)
+        annotationsPanel.showRun(run.id)
         artifactsPanel.showRun(run.id)
     }
 
@@ -295,6 +301,8 @@ class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Dis
     override fun dispose() {
         currentRunFlowJob?.cancel()
         currentLogFlowJob?.cancel()
+        summaryPanel.dispose()
+        annotationsPanel.dispose()
         artifactsPanel.dispose()
         scope.cancel()
     }
