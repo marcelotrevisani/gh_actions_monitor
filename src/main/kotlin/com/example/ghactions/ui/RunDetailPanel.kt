@@ -39,7 +39,7 @@ import javax.swing.tree.TreeSelectionModel
  * Plan 2 implements the *Logs* sub-view only — annotations/summary/artifacts tabs
  * are added in later plans.
  */
-class RunDetailPanel(project: Project) : JPanel(BorderLayout()), Disposable {
+class RunDetailPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val repository = project.getService(RunRepository::class.java)
@@ -66,6 +66,12 @@ class RunDetailPanel(project: Project) : JPanel(BorderLayout()), Disposable {
     }
 
     private val logViewer = LogViewerPanel()
+    private val artifactsPanel = ArtifactsPanel(project)
+
+    private val detailTabs = com.intellij.ui.components.JBTabbedPane().apply {
+        addTab("Logs", logViewer)
+        addTab("Artifacts", artifactsPanel)
+    }
 
     private val emptyMessage = JBLabel("Select a run to see its jobs.").apply {
         horizontalAlignment = SwingConstants.CENTER
@@ -76,7 +82,7 @@ class RunDetailPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         firstComponent = JPanel(BorderLayout()).apply {
             add(JBScrollPane(tree), BorderLayout.CENTER)
         }
-        secondComponent = logViewer
+        secondComponent = detailTabs
     }
 
     private var currentRunFlowJob: CJob? = null
@@ -96,6 +102,7 @@ class RunDetailPanel(project: Project) : JPanel(BorderLayout()), Disposable {
         currentRunFlowJob = scope.launch {
             repository.jobsState(run.id).collect { state -> renderJobs(state) }
         }
+        artifactsPanel.showRun(run.id)
     }
 
     private fun renderJobs(state: JobsState) {
@@ -170,6 +177,7 @@ class RunDetailPanel(project: Project) : JPanel(BorderLayout()), Disposable {
     override fun dispose() {
         currentRunFlowJob?.cancel()
         currentLogFlowJob?.cancel()
+        artifactsPanel.dispose()
         scope.cancel()
     }
 }
