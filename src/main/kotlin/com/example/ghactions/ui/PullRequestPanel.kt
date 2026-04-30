@@ -47,7 +47,7 @@ import javax.swing.tree.TreeSelectionModel
  * from the previously-selected run sticks around when the user switches PRs.
  */
 class PullRequestPanel(
-    project: Project,
+    private val project: Project,
     private val onRunSelected: (Run) -> Unit,
     private val onSelectionCleared: () -> Unit = {}
 ) : JPanel(BorderLayout()), Disposable {
@@ -226,10 +226,45 @@ class PullRequestPanel(
                     repository.refreshPullRequests(stateFilter)
                 }
             })
+            add(object : AnAction(
+                "Run Workflow…",
+                "Manually dispatch a workflow on a chosen ref",
+                AllIcons.Actions.Execute
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) {
+                    runWorkflow()
+                }
+            })
         }
         val tb = ActionManager.getInstance().createActionToolbar(ActionPlaces.TOOLWINDOW_CONTENT, group, true)
         tb.targetComponent = this
         return tb
+    }
+
+    private fun runWorkflow() {
+        val dialog = com.example.ghactions.ui.dispatch.WorkflowPickerDialog(project)
+        if (!dialog.showAndGet()) return
+        val workflowId = dialog.chosenWorkflowId ?: return
+        val ref = dialog.chosenRef
+        val runRepo = project.getService(com.example.ghactions.repo.RunRepository::class.java)
+        scope.launch {
+            val result = runRepo.dispatchWorkflow(workflowId, ref)
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+                when (result) {
+                    is com.example.ghactions.repo.ActionResult.Success ->
+                        com.intellij.openapi.ui.Messages.showInfoMessage(
+                            project, "Workflow dispatched on $ref.", "GitHub Actions"
+                        )
+                    is com.example.ghactions.repo.ActionResult.Error ->
+                        com.intellij.openapi.ui.Messages.showErrorDialog(
+                            project,
+                            com.example.ghactions.repo.friendlyApiError(result.httpStatus, result.message),
+                            "GitHub Actions"
+                        )
+                }
+            }
+        }
     }
 
     private fun observeRepository() {
