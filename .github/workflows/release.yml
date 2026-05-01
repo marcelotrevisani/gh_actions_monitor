@@ -67,10 +67,19 @@ jobs:
       - name: Verify plugin against target IDEs
         run: ./gradlew --no-daemon -PpluginVersion=${{ steps.version.outputs.version }} verifyPlugin
 
-      - name: Publish to JetBrains Marketplace
-        env:
-          PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
-        run: ./gradlew --no-daemon -PpluginVersion=${{ steps.version.outputs.version }} publishPlugin
+      # Marketplace upload is disabled for now — uploads to plugins.jetbrains.com
+      # are performed manually until the plugin's listing is stable. The built zip
+      # is still attached to the GitHub Release below, which serves as the
+      # distribution channel in the meantime.
+      #
+      # To re-enable: uncomment the step below and ensure the JETBRAINS_PUBLISH_TOKEN
+      # repository secret is set (https://plugins.jetbrains.com/author/me/tokens,
+      # scope "Plugin upload").
+      #
+      # - name: Publish to JetBrains Marketplace
+      #   env:
+      #     PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
+      #   run: ./gradlew --no-daemon -PpluginVersion=${{ steps.version.outputs.version }} publishPlugin
 
       - name: Upload distribution as workflow artifact
         uses: actions/upload-artifact@v4
