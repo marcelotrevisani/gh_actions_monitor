@@ -155,11 +155,11 @@ class GhActionsSettingsPanel : Disposable {
                 checkBox("Live polling enabled").bindSelected(state::livePollingEnabled)
             }
             row("Notification level:") {
+                // `selectedItem` is read on demand from isModified()/apply()/reset() — no
+                // live listener needed. (The previous `whenItemSelectedFromUi` call is
+                // marked @Experimental and trips the marketplace verifier.)
                 notificationLevelButton = segmentedButton(listOf("OFF", "FAILURES_ONLY", "ALL")) { text = it }
                     .apply { selectedItem = state.notificationLevel }
-                    .also { btn ->
-                        btn.whenItemSelectedFromUi(null) { state.notificationLevel = it }
-                    }
             }
             row("Default download directory:") {
                 val tf: Cell<JBTextField> = textField()

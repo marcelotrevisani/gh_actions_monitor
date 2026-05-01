@@ -39,7 +39,10 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation:2.3.13") { excludeCoroutines() }
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.13") { excludeCoroutines() }
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    implementation("org.jetbrains:markdown:0.7.3")
+    // The IntelliJ Platform already provides `org.intellij.markdown` at runtime, so
+    // ship against it as compileOnly. Bundling our own copy duplicates IDE packages
+    // and trips the marketplace verifier's "Plugin bundles IDE packages" warning.
+    compileOnly("org.jetbrains:markdown:0.7.3")
     compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 
     // JUnit 5 for pure unit tests
