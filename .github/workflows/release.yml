@@ -1,23 +1,5 @@
 name: Release
 
-# Publishes the plugin to the JetBrains Marketplace.
-#
-# Triggered by:
-#   * pushing a tag matching v*.*.* (e.g., v0.2.0) — recommended path
-#   * manual workflow_dispatch with an explicit version input — for hotfixes
-#
-# Required GitHub secret:
-#   JETBRAINS_PUBLISH_TOKEN
-#     Get one at https://plugins.jetbrains.com/author/me/tokens (scope:
-#     "Plugin upload"). Add as a repository secret named exactly
-#     JETBRAINS_PUBLISH_TOKEN.
-#
-# Precondition before the first publish:
-#   The plugin id `com.example.ghactions` is a marketplace placeholder. JetBrains
-#   rejects `com.example.*` ids on first upload — change it in `plugin.xml`'s
-#   <id> element to a real value (e.g., `dev.trevisani.ghactions-monitor`)
-#   before tagging.
-
 on:
   push:
     tags: ['v*.*.*']
