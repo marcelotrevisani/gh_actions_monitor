@@ -1,9 +1,9 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
-    kotlin("jvm") version "2.0.21"
-    kotlin("plugin.serialization") version "2.0.21"
-    id("org.jetbrains.intellij.platform") version "2.2.1"
+    kotlin("jvm") version "2.4.0"
+    kotlin("plugin.serialization") version "2.4.0"
+    id("org.jetbrains.intellij.platform") version "2.17.0"
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -58,14 +58,31 @@ dependencies {
     // Kotlin test assertions (used by both unit and platform tests)
     testImplementation(kotlin("test"))
 
-    // Ktor MockEngine for service-level tests; coroutines-test for runTest
-    testImplementation("io.ktor:ktor-client-mock:2.3.13")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // Ktor MockEngine for service-level tests; coroutines-test for runTest.
+    // Both transitively pull a *vanilla* kotlinx-coroutines-core, which must be excluded
+    // for the same reason as the main-source Ktor deps above: the IntelliJ Platform bundles
+    // its own JetBrains-patched coroutines on the test classpath, and a duplicate vanilla
+    // copy shadows it. That patched build adds internal methods (e.g.
+    // runBlockingWithParallelismCompensation) the platform's indexing scanner calls — with
+    // the vanilla copy on the classpath the scanner dies with NoSuchMethodError and
+    // BasePlatformTestCase setUp hangs until "Indexing timeout". Tests use the platform's
+    // bundled coroutines-core at runtime; coroutines-test itself is kept.
+    testImplementation("io.ktor:ktor-client-mock:2.3.13") { excludeCoroutines() }
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0") { excludeCoroutines() }
     testImplementation("io.mockk:mockk:1.13.13")
 }
 
 kotlin {
     jvmToolchain(providers.gradleProperty("javaVersion").get().toInt())
+    // The Kotlin compiler is newer than the stdlib bundled by our oldest supported
+    // IDE (sinceBuild = 243 / 2024.3, which ships Kotlin 2.0). We don't bundle our own
+    // stdlib (kotlin.stdlib.default.dependency = false) and rely on the platform's, so
+    // pin the API/language level to 2.0 to avoid emitting references to stdlib APIs that
+    // only exist in newer Kotlin runtimes — otherwise the plugin would crash on 2024.3.
+    compilerOptions {
+        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+    }
 }
 
 /** Helper for the dependency exclusions in the `dependencies { ... }` block above. */
@@ -74,6 +91,21 @@ fun org.gradle.api.artifacts.ModuleDependency.excludeCoroutines() {
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-slf4j")
+}
+
+// Per-dependency excludes above aren't enough on the test classpath: kotlinx-coroutines-test
+// resolves to its -jvm variant, whose dependency on kotlinx-coroutines-core-jvm gets pulled
+// back in through Gradle's variant/constraint alignment. Exclude the vanilla core at the
+// configuration level so the ONLY kotlinx.coroutines on the test classpath is the patched
+// build bundled inside the IntelliJ Platform artifact (that one lives inside the IDE
+// distribution, not as these module coordinates, so it is not affected). Without this the
+// platform's indexing scanner hits NoSuchMethodError and BasePlatformTestCase setUp hangs
+// until "Indexing timeout". coroutines-test itself is retained.
+listOf(configurations.testCompileClasspath, configurations.testRuntimeClasspath).forEach {
+    it.configure {
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+    }
 }
 
 intellijPlatform {
@@ -87,14 +119,19 @@ intellijPlatform {
     pluginVerification {
         ides {
             // Pinned to specific known-good versions. We previously used `recommended()`,
-            // but JetBrains' index can advertise an IDE version (e.g. IC-2026.1.1) before
+            // but JetBrains' index can advertise an IDE version (e.g. IC-2026.2.1) before
             // the actual artifact is published, breaking the verifier with "Could not
             // find idea:ideaIC:…". Pinning bottoms out our verification at the lowest
-            // supported build (sinceBuild = 243) and the most recent we've confirmed works.
-            ide(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2024.3")
-            ide(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.1")
-            // pluginUntilBuild = 261.* lets the plugin install on 2026.1.x even though we
-            // can't verify against it here yet; the API surface is stable since 2024.3.
+            // supported build (sinceBuild = 243) and steps up to the latest stable release.
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2024.3")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.1")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.2")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2026.1")
+            // pluginUntilBuild = 262.* lets the plugin install on 2026.2.x while it's still
+            // in EAP and not yet pinnable here without CI flakiness (EAP builds get pruned
+            // from JetBrains' servers). The API surface is stable since 2024.3, so once
+            // 2026.2 ships stable it can be added to the ladder above.
         }
     }
     // Marketplace publishing — driven by `./gradlew publishPlugin` in the release
