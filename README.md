@@ -16,7 +16,7 @@ PyCharm, and other IntelliJ-Platform-based IDEs (build 243+ / 2024.3+).
 
 | Field         | Value                                          |
 | ------------- | ---------------------------------------------- |
-| IDE platform  | IntelliJ Platform 243 – 261.\* (2024.3 – 2026.1) |
+| IDE platform  | IntelliJ Platform 243 – 262.\* (2024.3 – 2026.2) |
 | IDE products  | IntelliJ IDEA, PyCharm, GoLand, WebStorm, etc. |
 | Java runtime  | 17 (bundled with the IDE)                      |
 | Required deps | Git4Idea, GitHub plugin (both bundled)         |
