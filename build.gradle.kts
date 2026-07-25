@@ -83,6 +83,14 @@ kotlin {
     compilerOptions {
         apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
         languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+        // Inherit platform interface default methods directly instead of emitting
+        // compatibility bridge overrides. Without this, implementing ToolWindowFactory /
+        // StatusBarWidget makes Kotlin generate delegating overrides of their default
+        // methods (isApplicable, isDoNotActivateOnStart, getPresentation(PlatformType),
+        // getAnchor, getIcon, manage) — code we never wrote — which the plugin verifier
+        // then flags as deprecated/experimental/internal API usage. `all` drops those
+        // bridges so only methods we actually override are reported.
+        freeCompilerArgs.add("-Xjvm-default=all")
     }
 }
 
