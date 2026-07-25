@@ -123,15 +123,18 @@ intellijPlatform {
             // the actual artifact is published, breaking the verifier with "Could not
             // find idea:ideaIC:…". Pinning bottoms out our verification at the lowest
             // supported build (sinceBuild = 243) and steps up to the latest stable release.
+            //
+            // JetBrains stopped publishing the standalone IntelliJ IDEA Community (ideaIC)
+            // distribution at 2025.3 (build 253); Community and Ultimate unified into a single
+            // `idea` artifact. So use IntellijIdeaCommunity only up to 2025.2, and the unified
+            // IntellijIdea type from 2025.3 on — using IntellijIdeaCommunity there resolves to
+            // the nonexistent idea:ideaIC:<ver> and fails the verifier.
             create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2024.3")
             create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.1")
             create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.2")
-            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")
-            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2026.1")
-            // pluginUntilBuild = 262.* lets the plugin install on 2026.2.x while it's still
-            // in EAP and not yet pinnable here without CI flakiness (EAP builds get pruned
-            // from JetBrains' servers). The API surface is stable since 2024.3, so once
-            // 2026.2 ships stable it can be added to the ladder above.
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2025.3")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2026.1")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2026.2")
         }
     }
     // Marketplace publishing — driven by `./gradlew publishPlugin` in the release
