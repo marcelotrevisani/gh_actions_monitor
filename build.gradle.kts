@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
     kotlin("jvm") version "2.4.0"
@@ -117,6 +118,17 @@ intellijPlatform {
         }
     }
     pluginVerification {
+        // Fail only on problems that mean the plugin won't actually work. The plugin
+        // verifier's default failure level (since IntelliJ Platform Gradle Plugin 2.x)
+        // also fails on INTERNAL_API_USAGES — but our only such "usages" are the synthetic
+        // bridge methods Kotlin emits for ToolWindowFactory's default methods (getAnchor,
+        // getIcon, manage) when we implement the interface; they aren't code we wrote and
+        // can't be removed without breaking older-IDE compatibility. Deprecated/experimental/
+        // internal usages stay in the report as advisories, they just don't fail the build.
+        failureLevel = listOf(
+            FailureLevel.COMPATIBILITY_PROBLEMS,
+            FailureLevel.INVALID_PLUGIN,
+        )
         ides {
             // Pinned to specific known-good versions. We previously used `recommended()`,
             // but JetBrains' index can advertise an IDE version (e.g. IC-2026.2.1) before
