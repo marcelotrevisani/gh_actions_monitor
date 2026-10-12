@@ -122,7 +122,8 @@ intellijPlatform {
         version = providers.gradleProperty("pluginVersion")
         ideaVersion {
             sinceBuild = providers.gradleProperty("pluginSinceBuild")
-            untilBuild = providers.gradleProperty("pluginUntilBuild")
+            // Open-ended: omit until-build from plugin.xml (see gradle.properties).
+            untilBuild = provider { null }
         }
     }
     pluginVerification {
@@ -154,7 +155,13 @@ intellijPlatform {
             create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2025.2")
             create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2025.3")
             create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2026.1")
-            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2026.2")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2026.2.3")
+            // IDEA alone doesn't prove the plugin works elsewhere: other products bundle
+            // Git4Idea / the GitHub plugin differently. Check the newest release of the
+            // non-IDEA products we care about (PyCharm is the primary target).
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.PyCharm, "2026.2.3")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.GoLand, "2026.2.3")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.WebStorm, "2026.2.3")
         }
     }
     // Marketplace publishing — driven by `./gradlew publishPlugin` in the release
